@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Chatbot - Đăng nhập</title>
+    <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+    <div class="container">
+        <div class="auth-card">
+            <div class="brand">
+                <div class="logo">&#129302;</div>
+                <h1>AI Chatbot</h1>
+                <p>Nền tảng phân tích dữ liệu thông minh</p>
+            </div>
+
+            <!-- Tab switcher -->
+            <div class="tabs">
+                <button class="tab active" id="tab-login" onclick="showTab('login')">Đăng nhập</button>
+                <button class="tab" id="tab-register" onclick="showTab('register')">Đăng ký</button>
+            </div>
+
+            <!-- Login Form -->
+            <form id="login-form" class="auth-form" onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label for="login-email">Email</label>
+                    <input type="email" id="login-email" placeholder="you@example.com" required />
+                </div>
+                <div class="form-group">
+                    <label for="login-password">Mật khẩu</label>
+                    <div class="input-wrapper">
+                        <input type="password" id="login-password" placeholder="••••••••" required />
+                        <button type="button" class="toggle-pw" onclick="togglePassword('login-password', this)">&#128065;</button>
+                    </div>
+                </div>
+                <div id="login-error" class="alert alert-error hidden"></div>
+                <button type="submit" class="btn-primary" id="login-btn">
+                    <span class="btn-text">Đăng nhập</span>
+                    <span class="spinner hidden"></span>
+                </button>
+            </form>
+
+            <!-- Register Form -->
+            <form id="register-form" class="auth-form hidden" onsubmit="handleRegister(event)">
+                <div class="form-group">
+                    <label for="reg-username">Tên đăng nhập</label>
+                    <input type="text" id="reg-username" placeholder="Nhập tên của bạn" required />
+                </div>
+                <div class="form-group">
+                    <label for="reg-email">Email</label>
+                    <input type="email" id="reg-email" placeholder="you@example.com" required />
+                </div>
+                <div class="form-group">
+                    <label for="reg-password">Mật khẩu</label>
+                    <div class="input-wrapper">
+                        <input type="password" id="reg-password" placeholder="Tối thiểu 6 ký tự" required minlength="6" />
+                        <button type="button" class="toggle-pw" onclick="togglePassword('reg-password', this)">&#128065;</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="reg-confirm">Xác nhận mật khẩu</label>
+                    <div class="input-wrapper">
+                        <input type="password" id="reg-confirm" placeholder="Nhập lại mật khẩu" required />
+                        <button type="button" class="toggle-pw" onclick="togglePassword('reg-confirm', this)">&#128065;</button>
+                    </div>
+                </div>
+                <div id="register-error" class="alert alert-error hidden"></div>
+                <div id="register-success" class="alert alert-success hidden"></div>
+                <button type="submit" class="btn-primary" id="register-btn">
+                    <span class="btn-text">Đăng ký</span>
+                    <span class="spinner hidden"></span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Dashboard (shown after login) -->
+    <div id="dashboard" class="dashboard hidden">
+        <nav class="navbar">
+            <div class="nav-brand">&#129302; AI Chatbot</div>
+            <div class="nav-user">
+                <span id="user-display"></span>
+                <button class="btn-logout" onclick="handleLogout()">Đăng xuất</button>
+            </div>
+        </nav>
+        <div class="dashboard-content">
+            <h2>Xin chào, <span id="welcome-name"></span>! 👋</h2>
+            <p>Bạn đã đăng nhập thành công.</p>
+            <div class="info-card">
+                <h3>Thông tin tài khoản</h3>
+                <div id="user-info"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
