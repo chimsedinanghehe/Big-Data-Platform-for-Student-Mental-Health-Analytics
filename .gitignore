@@ -1,40 +1,9 @@
-# Python
-venv/
-__pycache__/
-*.pyc
-
-# Node
 node_modules/
-
-# Environment
+backend/node_modules/
 .env
-
-# Logs
-logs/
-*.log
-
-# Big Data
-data/raw/
-data/bronze/
-data/silver/
-data/gold/
-data/processed/
-data/embeddings/
-data/streaming/
-
-# Spark
-spark-warehouse/
-
-# Kafka
-/tmp/kafka-logs/
-
-# Jupyter
-.ipynb_checkpoints/
-
-# FAISS
-*.faiss
-*.pkl
-
-# OS
-.DS_Store
-Thumbs.db
+backend/.env
+dist/
+build/
+npm-debug.log*
+yarn-error.log*
+.DS_Store 
