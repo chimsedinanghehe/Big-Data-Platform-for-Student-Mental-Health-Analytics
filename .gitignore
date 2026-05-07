@@ -1,0 +1,40 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+
+# Environment
+.env
+
+# Logs
+logs/
+*.log
+
+# Big Data
+data/raw/
+data/bronze/
+data/silver/
+data/gold/
+data/processed/
+data/embeddings/
+data/streaming/
+
+# Spark
+spark-warehouse/
+
+# Kafka
+/tmp/kafka-logs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# FAISS
+*.faiss
+*.pkl
+
+# OS
+.DS_Store
+Thumbs.db
