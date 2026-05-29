@@ -1,0 +1,16 @@
+langchain
+sentence-transformers
+transformers
+torch
+fastapi
+uvicorn
+pypdf
+python-dotenv
+langchain-huggingface
+langchain-community
+qdrant-client
+langchain-qdrant
+openai
+google-cloud-storage
+pandas
+pyarrow
