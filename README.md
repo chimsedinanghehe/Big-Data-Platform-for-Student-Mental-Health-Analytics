@@ -1,6 +1,6 @@
 # Big Data Platform for Student Mental Health Analytics
 
-Repo nay chua chatbot RAG va pipeline Big Data xu ly knowledge base tren Google Cloud Storage bang Dataproc/Spark.
+This repository contains a RAG chatbot and a Big Data knowledge-base preprocessing pipeline using Google Cloud Storage, Dataproc, Spark, embeddings, and Qdrant.
 
 ## Current Target
 
@@ -16,7 +16,7 @@ Main bucket:
 gs://student-mental-health-lake-nhom1-2026
 ```
 
-Qdrant collection moi cho rebuild sach:
+Clean Qdrant collection for the current rebuild:
 
 ```text
 student_mental_health_v1
@@ -24,26 +24,26 @@ student_mental_health_v1
 
 ## GCS Layout
 
-Pipeline hien tai khong dung version partition trong output path. Khi them tai lieu moi, co the chay incremental append cho mot hoac nhieu file. Khi sua/xoa tai lieu cu, chay `overwrite` de rebuild Silver, Gold va embedding artifact tu toan bo knowledge base.
+The current pipeline does not use version partitions in output paths. For newly added documents, run the incremental append flow. For replaced, edited, or deleted documents, run a full overwrite rebuild so stale Silver/Gold rows are removed.
 
 ```text
 gs://student-mental-health-lake-nhom1-2026/
   bronze/
-    knowledge_base/                         # PDF/HTML/TXT/MD raw documents
+    knowledge_base/                         # raw PDF/HTML/TXT/MD documents
 
   silver/
     knowledge_base_clean/
-      parquet/                              # source of truth cho Spark/pipeline
-      jsonl/                                # de doc/debug bang gcloud/editor
+      parquet/                              # source of truth for Spark/pipeline jobs
+      jsonl/                                # human-readable debug mirror
 
   gold/
     rag_chunks/
-      parquet/                              # input chuan cho embedding
-      jsonl/                                # de kiem tra chunk_text
+      parquet/                              # standard input for embedding jobs
+      jsonl/                                # human-readable chunk inspection mirror
 
   vector/
     embeddings/student_mental_health_v1/
-      embeddings.jsonl                      # backup embedding + payload
+      embeddings.jsonl                      # embedding + payload backup
 
   vector_backup/
     qdrant/student_mental_health_v1/
@@ -74,11 +74,12 @@ Supported Bronze document types:
 ## Scripts
 
 ```text
+scripts/run_rag_pipeline.py
+
 scripts/preprocessing/pdf_to_silver.py
 scripts/preprocessing/run_rag_preprocessing_dataproc.py
 scripts/preprocessing/verify_silver_chunks.py
 
-scripts/run_rag_pipeline.py
 scripts/embeddings/index_gold_rag_chunks_to_qdrant.py
 scripts/embeddings/silver_to_qdrant.py
 scripts/embeddings/export_qdrant_to_gcs.py
@@ -92,19 +93,19 @@ scripts/deployment/gcs_login.bat
 
 ## Run Pipeline
 
-Pipeline runner la cach chay chinh. Runner khong doc file local de preprocess; tai lieu phai nam tren Bronze GCS truoc:
+The pipeline runner is the primary entry point. It does not preprocess local files directly. Documents must already exist in Bronze GCS before running the pipeline:
 
 ```text
 gs://student-mental-health-lake-nhom1-2026/bronze/knowledge_base/
 ```
 
-Chay menu:
+Start the menu:
 
 ```powershell
 venv\Scripts\python.exe scripts\run_rag_pipeline.py
 ```
 
-Neu chua login Google Cloud tren may nay, login truoc:
+If this machine is not authenticated with Google Cloud yet, log in first:
 
 ```powershell
 gcloud auth login
@@ -112,119 +113,119 @@ gcloud auth application-default login
 gcloud config set project student-mental-health-496205
 ```
 
-Dataproc dependency can co trong bucket. Neu chua co, upload mot lan:
+The Dataproc dependency package must exist in the bucket. Upload it once if it is missing:
 
 ```powershell
 gcloud storage cp build\pypdf_deps.zip gs://student-mental-health-lake-nhom1-2026/jobs/deps/pypdf_deps.zip
 ```
 
-The preprocessing script installs this zip with a Dataproc initialization action; it does not SSH into the cluster.
+The preprocessing runner installs this package with a Dataproc initialization action. It does not use SSH to install dependencies on the cluster.
 
-### Them tai lieu moi
+### Add New Documents
 
-Dung khi file moi da co tren Bronze va chua tung duoc index.
+Use this flow when the documents are new, already uploaded to Bronze, and have not been indexed before.
 
-Neu them vai file le va biet exact GCS path, chon option `1`:
+If you added a small number of files and know their exact GCS paths, choose option `1`:
 
 ```text
 1. Run incremental pipeline for exact Bronze GCS file path(s)
 ```
 
-Nhap mot file:
+Example for one file:
 
 ```text
 gs://student-mental-health-lake-nhom1-2026/bronze/knowledge_base/new_document.pdf
 ```
 
-Nhap nhieu file bang dau `;`:
+Example for multiple files, separated by semicolons:
 
 ```text
 gs://student-mental-health-lake-nhom1-2026/bronze/knowledge_base/a.pdf;gs://student-mental-health-lake-nhom1-2026/bronze/knowledge_base/b.pdf
 ```
 
-Neu upload ca batch vao mot folder rieng, chon option `2`:
+If you uploaded a batch into a dedicated Bronze folder, choose option `2`:
 
 ```text
 2. Run incremental pipeline for a Bronze GCS prefix/folder
 ```
 
-Nhap prefix/folder:
+Example prefix:
 
 ```text
 gs://student-mental-health-lake-nhom1-2026/bronze/knowledge_base/batch_20260530/
 ```
 
-Option `1` va `2` se chay:
+Options `1` and `2` run:
 
 ```text
 Bronze new file(s)
 -> Dataproc append Silver clean docs
 -> Dataproc append Gold RAG chunks
--> generate embeddings cho file/prefix moi
--> merge vao vector/embeddings/student_mental_health_v1/embeddings.jsonl
--> hoi co upsert vao Qdrant student_mental_health_v1 khong
+-> generate embeddings for the new source path(s) or prefix
+-> merge into vector/embeddings/student_mental_health_v1/embeddings.jsonl
+-> ask whether to upsert into Qdrant collection student_mental_health_v1
 ```
 
-Chon `y` khi runner hoi upsert neu muon chatbot retrieval duoc tai lieu moi ngay.
+Answer `y` to the upsert prompt if the chatbot should retrieve from the new documents immediately.
 
-### Sua, thay the, hoac xoa tai lieu cu
+### Replace, Edit, Or Delete Documents
 
-Khong dung option `1`/`2`, vi append mode khong xoa stale rows cu trong Silver/Gold. Dung option `6`:
+Do not use options `1` or `2` for replaced, edited, or deleted documents. Append mode cannot remove stale Silver/Gold rows. Use option `6` instead:
 
 ```text
 6. Full rebuild end-to-end
 ```
 
-Option `6` se chay:
+Option `6` runs:
 
 ```text
-Bronze full folder
+Full Bronze folder
 -> overwrite Silver/Gold
 -> regenerate embeddings.jsonl
--> hoi co upsert rebuilt chunks vao Qdrant khong
+-> ask whether to upsert rebuilt chunks into Qdrant
 ```
 
-Chon `y` khi runner hoi upsert neu muon collection `student_mental_health_v1` cap nhat theo ban rebuild.
+Answer `y` to the upsert prompt if collection `student_mental_health_v1` should reflect the rebuilt data.
 
-### Chay tung chang de kiem tra
+### Run Individual Stages
 
-Dung cac option nay neu muon tach pipeline thanh tung buoc:
+Use these options if you want to split the pipeline into manual checkpoints:
 
 ```text
-3. Full rebuild Silver/Gold tu toan bo Bronze
-4. Save embedding artifact tu toan bo Gold
-5. Upsert toan bo Gold vao Qdrant
+3. Full rebuild Silver/Gold from all Bronze documents
+4. Save embedding artifact from all Gold chunks
+5. Upsert all Gold chunks to Qdrant
 ```
 
-Thu tu dung khi chay tach buoc:
+Recommended staged order:
 
 ```text
-3 -> kiem tra Silver/Gold -> 4 -> kiem tra embeddings.jsonl -> 5
+3 -> inspect Silver/Gold -> 4 -> inspect embeddings.jsonl -> 5
 ```
 
-### Backup Qdrant truoc rebuild lon
+### Back Up Qdrant Before A Large Rebuild
 
-Truoc khi rebuild lon, co the chon option `7`:
+Before a large rebuild, choose option `7`:
 
 ```text
 7. Export Qdrant collection backup to GCS
 ```
 
-Backup se ghi vao:
+Backup output:
 
 ```text
 gs://student-mental-health-lake-nhom1-2026/vector_backup/qdrant/student_mental_health_v1/export_before_rebuild_<timestamp>.jsonl
 ```
 
-### Doi bucket/project/collection tam thoi
+### Change Runtime Config For One Menu Session
 
-Chon option `8` neu can doi config trong phien menu hien tai:
+Choose option `8` to change the project, bucket, collection, chunk size, or chunk overlap for the current menu session:
 
 ```text
 8. Change config for this run
 ```
 
-Option nay khong sua file `.env` hay README.
+This does not edit `.env`, README, or any source file.
 
 Expected output paths:
 
@@ -238,7 +239,7 @@ gs://student-mental-health-lake-nhom1-2026/vector/embeddings/student_mental_heal
 
 ## Manual Commands
 
-Chi dung cac lenh duoi day khi muon debug, khong muon dung menu runner.
+Use these commands only for debugging or when you intentionally do not want to use the menu runner.
 
 Run preprocessing on Dataproc for the whole knowledge base:
 
@@ -252,7 +253,7 @@ python scripts/preprocessing/run_rag_preprocessing_dataproc.py `
   --chunk-overlap=100
 ```
 
-Generate embedding artifact for all Gold chunks, without writing Qdrant:
+Generate an embedding artifact for all Gold chunks without writing to Qdrant:
 
 ```powershell
 venv\Scripts\python.exe scripts\embeddings\index_gold_rag_chunks_to_qdrant.py `
@@ -280,24 +281,24 @@ GCS_KNOWLEDGE_BASE_PREFIX=bronze/knowledge_base
 
 ## Rebuild Policy
 
-Khi them tai lieu moi:
+When adding new documents:
 
-1. Upload file vao `bronze/knowledge_base/`.
-2. Chay runner option `1` cho exact file path(s), hoac option `2` cho dedicated Bronze prefix/folder.
-3. Chon `y` khi runner hoi upsert neu muon chatbot retrieval duoc tai lieu moi ngay.
+1. Upload the files to `bronze/knowledge_base/`.
+2. Run option `1` for exact file path(s), or option `2` for a dedicated Bronze prefix/folder.
+3. Answer `y` to the upsert prompt if the chatbot should retrieve from the new documents immediately.
 
-Khi thay the hoac xoa tai lieu cu:
+When replacing, editing, or deleting existing documents:
 
-1. Chay runner option `6`.
-2. Chon `y` khi runner hoi upsert neu muon collection hien tai cap nhat theo rebuild.
+1. Run option `6`.
+2. Answer `y` to the upsert prompt if the current collection should reflect the rebuild.
 
-Collection cu `student_mental_health` co mixed payload format nen khong nen tiep tuc ghi vao do cho rebuild moi. Dung `student_mental_health_v1` de index sach.
+The legacy collection `student_mental_health` contains mixed payload formats. Do not write new rebuilds into it unless explicitly required. Use `student_mental_health_v1` for the clean index.
 
 ## Qdrant Backup
 
-Truoc khi rebuild lon, cach khuyen dung la chay runner option `7`.
+The recommended backup path is runner option `7`.
 
-Lenh manual tuong duong:
+Equivalent manual command:
 
 ```powershell
 python scripts/embeddings/export_qdrant_to_gcs.py `
@@ -308,7 +309,7 @@ python scripts/embeddings/export_qdrant_to_gcs.py `
   --format jsonl
 ```
 
-Backup path mong muon:
+Expected backup path:
 
 ```text
 gs://student-mental-health-lake-nhom1-2026/vector_backup/qdrant/student_mental_health_v1/export_before_rebuild_<timestamp>.jsonl
@@ -334,4 +335,4 @@ http://127.0.0.1:5173
 
 ## Safety
 
-He thong nay khong phai he thong chan doan y te. Chatbot chi nen cung cap thong tin ho tro, bao ve rieng tu nguoi dung, va huong nguoi dung den ho tro chuyen mon khi can.
+This project is not a medical diagnosis system. The chatbot should provide supportive information, protect user privacy, and direct users to professional or emergency support when needed.
