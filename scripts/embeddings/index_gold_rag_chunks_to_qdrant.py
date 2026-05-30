@@ -28,6 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input_path", default=None)
     parser.add_argument("--embedding_output_path", default=None)
     parser.add_argument("--source-path", default=None, help="Only process chunks from this exact source_path.")
+    parser.add_argument("--source-prefix", default=None, help="Only process chunks whose source_path starts with this prefix.")
     parser.add_argument("--source-file", default=None, help="Only process chunks from this exact source_file.")
     parser.add_argument("--merge-embedding-output", action="store_true", help="Merge into existing embeddings.jsonl by id instead of overwriting it.")
     parser.add_argument("--no-save-embeddings", action="store_true", help="Do not write embedding artifact to GCS.")
@@ -52,6 +53,8 @@ def main() -> int:
     ]
     if args.source_path:
         command.append(f"--source-path={args.source_path}")
+    if args.source_prefix:
+        command.append(f"--source-prefix={args.source_prefix}")
     if args.source_file:
         command.append(f"--source-file={args.source_file}")
     if args.merge_embedding_output:

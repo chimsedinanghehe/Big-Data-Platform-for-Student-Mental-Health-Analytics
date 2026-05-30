@@ -43,6 +43,7 @@ class Settings:
     batch_size: int
     limit: int | None
     source_path: str | None
+    source_prefix: str | None
     source_file: str | None
     dry_run: bool
     save_embeddings: bool
@@ -66,6 +67,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--limit", type=int, default=None, help="Optional maximum valid chunks to process.")
     parser.add_argument("--source-path", default=None, help="Only process chunks from this exact source_path.")
+    parser.add_argument("--source-prefix", default=None, help="Only process chunks whose source_path starts with this prefix.")
     parser.add_argument("--source-file", default=None, help="Only process chunks from this exact source_file.")
     parser.add_argument("--dry-run", action="store_true", help="Read and embed validation only; do not upsert.")
     parser.add_argument("--no-save-embeddings", action="store_true", help="Do not save generated embeddings to GCS.")
@@ -90,6 +92,7 @@ def main() -> int:
         batch_size=args.batch_size,
         limit=args.limit,
         source_path=args.source_path,
+        source_prefix=args.source_prefix,
         source_file=args.source_file,
         dry_run=args.dry_run,
         save_embeddings=not args.no_save_embeddings,
@@ -124,6 +127,7 @@ def main() -> int:
             parquet_files,
             settings.batch_size,
             source_path=settings.source_path,
+            source_prefix=settings.source_prefix,
             source_file=settings.source_file,
         ):
             total_rows += batch["total_rows"]
@@ -422,6 +426,7 @@ def iter_valid_batches(
     batch_size: int,
     *,
     source_path: str | None = None,
+    source_prefix: str | None = None,
     source_file: str | None = None,
 ):
     for parquet_file in parquet_files:
@@ -432,7 +437,12 @@ def iter_valid_batches(
             records = []
             for index in range(total_rows):
                 record = {column: values[index] for column, values in columns.items()}
-                if is_valid_record(record, source_path=source_path, source_file=source_file):
+                if is_valid_record(
+                    record,
+                    source_path=source_path,
+                    source_prefix=source_prefix,
+                    source_file=source_file,
+                ):
                     records.append(record)
             yield {"total_rows": total_rows, "records": records}
 
@@ -441,17 +451,23 @@ def is_valid_record(
     record: dict[str, Any],
     *,
     source_path: str | None = None,
+    source_prefix: str | None = None,
     source_file: str | None = None,
 ) -> bool:
     text = record.get("chunk_text")
     chunk_id = record.get("chunk_id")
+    record_source_path = record.get("source_path")
     return (
         record.get("status") == "ok"
         and isinstance(text, str)
         and bool(text.strip())
         and isinstance(chunk_id, str)
         and bool(chunk_id.strip())
-        and (source_path is None or record.get("source_path") == source_path)
+        and (source_path is None or record_source_path == source_path)
+        and (
+            source_prefix is None
+            or (isinstance(record_source_path, str) and record_source_path.startswith(source_prefix))
+        )
         and (source_file is None or record.get("source_file") == source_file)
     )
 

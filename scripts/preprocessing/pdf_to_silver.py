@@ -19,7 +19,11 @@ SUPPORTED_EXTENSIONS = {".pdf", ".html", ".htm", ".txt", ".md"}
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Extract and clean knowledge base files from GCS Bronze to Silver.")
-    parser.add_argument("--input_path", required=True, help="GCS Bronze path, for example gs://bucket/bronze/knowledge_base/")
+    parser.add_argument(
+        "--input_path",
+        required=True,
+        help="GCS Bronze path, or multiple exact GCS paths separated by ';'.",
+    )
     parser.add_argument(
         "--output_path",
         required=True,
@@ -47,7 +51,7 @@ def main() -> None:
     source_files = (
         spark.read.format("binaryFile")
         .option("recursiveFileLookup", "true")
-        .load(args.input_path.rstrip("/"))
+        .load(parse_input_paths(args.input_path))
         .select("path", "content", "length", "modificationTime")
     )
 
@@ -65,6 +69,15 @@ def main() -> None:
     silver_df = spark.createDataFrame(rows_rdd, schema=silver_schema(emit_chunks=args.emit_chunks))
     write_output(silver_df, args.output_path.rstrip("/"), args.output_mode, args.output_format)
     spark.stop()
+
+
+def parse_input_paths(input_path: str) -> str | list[str]:
+    paths = [path.strip().rstrip("/") for path in input_path.split(";") if path.strip()]
+    if not paths:
+        raise ValueError("--input_path is empty.")
+    if len(paths) == 1:
+        return paths[0]
+    return paths
 
 
 def write_output(df, output_path: str, output_mode: str, output_format: str) -> None:

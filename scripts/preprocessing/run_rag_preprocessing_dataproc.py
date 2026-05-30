@@ -22,7 +22,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--project", default=DEFAULT_PROJECT)
     parser.add_argument("--bucket", default=DEFAULT_BUCKET)
-    parser.add_argument("--input_path", default=None, help="Defaults to gs://<bucket>/bronze/knowledge_base/")
+    parser.add_argument(
+        "--input_path",
+        default=None,
+        help="Defaults to gs://<bucket>/bronze/knowledge_base/. Use ';' to pass multiple exact GCS file paths.",
+    )
     parser.add_argument(
         "--version",
         default=None,

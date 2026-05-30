@@ -108,6 +108,7 @@ scripts/preprocessing/pdf_to_silver.py
 Support scripts:
 
 ```text
+scripts/run_rag_pipeline.py
 scripts/preprocessing/run_rag_preprocessing_dataproc.py
 scripts/preprocessing/verify_silver_chunks.py
 scripts/embeddings/index_gold_rag_chunks_to_qdrant.py
@@ -170,8 +171,10 @@ Operational rules:
 - Do not rely on `gcloud compute ssh` for installing dependencies; the current user may not have `compute.instances.get`.
 - The current production-style path is unversioned. Use `overwrite` to rebuild Silver/Gold after adding documents to Bronze.
 - Do not write new rebuilds into the old mixed-format Qdrant collection unless explicitly requested.
-- For one newly uploaded source file, use incremental mode: preprocessing with `--input_path=<exact_gcs_file>` and `--output-mode=append`, then indexing with `--source-path=<exact_gcs_file>`.
+- For one or more newly uploaded source files already in Bronze GCS, use incremental mode: preprocessing with `--input_path=<exact_gcs_file>` or semicolon-separated exact GCS files and `--output-mode=append`, then indexing each source with `--source-path=<exact_gcs_file>`.
+- For a dedicated Bronze batch folder, preprocessing may use the folder prefix with `--output-mode=append`, then indexing should use `--source-prefix=<gcs_prefix>`.
 - For replaced or deleted source files, run a full rebuild with `--output-mode=overwrite`; append mode cannot remove stale Silver/Gold rows.
+- If the user wants a short command or interactive choice, use `venv\Scripts\python.exe scripts\run_rag_pipeline.py`.
 
 ## Gold Chunks To Embedding / Qdrant Flow
 
