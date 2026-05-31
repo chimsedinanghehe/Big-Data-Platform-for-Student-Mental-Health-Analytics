@@ -12,7 +12,11 @@ The project currently has two active tracks:
 
 1. RAG chatbot runtime
    - FastAPI backend runs locally.
-   - Frontend chatbot UI runs locally with Vite.
+   - Unified frontend app runs locally with Vite.
+   - Chatbot UI is one tab in the unified frontend.
+   - Streamlit analytics dashboard is embedded as another tab.
+   - PostgreSQL stores only application account/profile metadata.
+   - Supported app roles are `student` and `researcher`.
    - Qdrant is the online vector database.
    - Qdrant is self-hosted on a GCP VM.
    - OpenAI Responses API is the default generation backend.
@@ -40,7 +44,7 @@ Knowledge base documents
 -> Qdrant collection
 -> FastAPI RAG backend
 -> OpenAI Responses API
--> frontend chatbot
+-> unified frontend chatbot tab
 -> anonymized chat logs back to GCS
 ```
 
@@ -297,7 +301,7 @@ Size:       about 80.8 MB
 ## RAG Runtime Flow
 
 ```text
-Frontend UI
+Unified frontend Chat tab
 -> FastAPI backend
 -> query rewrite
 -> embeddings
@@ -310,21 +314,35 @@ Frontend UI
 Main local URLs:
 
 ```text
-Backend:  http://127.0.0.1:8000
-Health:   http://127.0.0.1:8000/health
-Frontend: http://127.0.0.1:5173
+PostgreSQL: 127.0.0.1:5433
+Backend:    http://127.0.0.1:8000
+Health:     http://127.0.0.1:8000/health
+Dashboard:  http://127.0.0.1:8501
+Frontend:   http://127.0.0.1:5173
 ```
 
-Run both backend and frontend:
+Run local unified app:
 
 ```powershell
 scripts\deployment\run_all.bat
+```
+
+Run PostgreSQL only:
+
+```powershell
+scripts\deployment\run_postgres.bat
 ```
 
 Run backend only:
 
 ```powershell
 scripts\deployment\run_backend.bat
+```
+
+Run Streamlit dashboard only:
+
+```powershell
+scripts\deployment\run_dashboard.bat
 ```
 
 Run frontend only:
@@ -334,6 +352,30 @@ scripts\deployment\run_frontend.bat
 ```
 
 Do not run `backend/rag/service.py` directly. Backend entrypoint is `backend.main:app`.
+
+The user database schema is in `backend/db/schema.sql`. It creates:
+
+```text
+app_users
+student_profiles
+researcher_profiles
+app_sessions
+```
+
+Rules:
+
+- Store account/profile metadata only.
+- Keep student research attributes limited to `age`, `gender`, and `learner_type`.
+- Keep researcher metadata at account level only unless the user explicitly asks to add researcher-specific fields.
+- Student accounts can access only Chatbot and Profile.
+- Researcher accounts can access only Dashboard and Profile.
+- Do not store chat text, RAG chunks, embeddings, Qdrant data, or Spark outputs in PostgreSQL unless the architecture is explicitly changed.
+
+Demo accounts can be seeded with:
+
+```powershell
+venv\Scripts\python.exe scripts\deployment\seed_demo_users.py
+```
 
 ## Environment Files
 

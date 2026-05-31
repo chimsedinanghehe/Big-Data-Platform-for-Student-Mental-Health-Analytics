@@ -100,7 +100,9 @@ scripts/embeddings/test_qdrant_retrieval.py
 
 scripts/deployment/run_all.bat
 scripts/deployment/run_backend.bat
+scripts/deployment/run_dashboard.bat
 scripts/deployment/run_frontend.bat
+scripts/deployment/run_postgres.bat
 scripts/deployment/gcs_login.bat
 ```
 
@@ -359,22 +361,93 @@ Expected backup path:
 gs://student-mental-health-lake-nhom1-2026/vector_backup/qdrant/student_mental_health_v1/export_before_rebuild_<timestamp>.jsonl
 ```
 
-## Local Chatbot
+## Local Unified App
 
 ```powershell
 scripts\deployment\run_all.bat
 ```
 
-Backend:
+This starts:
 
 ```text
-http://127.0.0.1:8000
+PostgreSQL: 127.0.0.1:5433
+Backend:    http://127.0.0.1:8000
+Dashboard:  http://127.0.0.1:8501
+Frontend:   http://127.0.0.1:5173
 ```
 
-Frontend:
+The frontend is now the shared app shell:
 
 ```text
-http://127.0.0.1:5173
+Student role    -> Chatbot + Profile
+Researcher role -> Dashboard + Profile
+Profile/Login   -> PostgreSQL user tables
+```
+
+The PostgreSQL database is local Docker Compose storage and is only for account/profile metadata. It does not store chat messages, RAG chunks, embeddings, Qdrant data, or Spark outputs.
+
+Manual startup order:
+
+```powershell
+scripts\deployment\run_postgres.bat
+scripts\deployment\run_backend.bat
+scripts\deployment\run_dashboard.bat
+scripts\deployment\run_frontend.bat
+```
+
+Install dashboard and PostgreSQL client dependencies if needed:
+
+```powershell
+venv\Scripts\python.exe -m pip install -r requirements.txt
+venv\Scripts\python.exe -m pip install -r MentalSchool-Dashboard\requirements.txt
+```
+
+PostgreSQL schema:
+
+```text
+backend/db/schema.sql
+```
+
+Current user tables:
+
+```text
+app_users(id, email, password_hash, display_name, role, is_active, created_at, updated_at)
+student_profiles(user_id, age, gender, learner_type)
+researcher_profiles(user_id)
+app_sessions(id, user_id, token_hash, created_at, expires_at)
+```
+
+API:
+
+```text
+POST /api/auth/register
+POST /api/auth/login
+GET  /api/auth/me
+PUT  /api/users/me
+```
+
+Supported roles:
+
+```text
+student
+researcher
+```
+
+After login, navigation is role-based. Student accounts see only Chatbot and Profile. Researcher accounts see only Dashboard and Profile. Student profiles keep only the current research fields used by the app: age, gender, and learner type. Researcher accounts keep only account-level identity and role metadata.
+
+Seed demo accounts:
+
+```powershell
+$env:DATABASE_URL="postgresql://student_app:student_app_password@127.0.0.1:5433/student_mental_health_app"
+venv\Scripts\python.exe scripts\deployment\seed_demo_users.py
+```
+
+Demo logins:
+
+```text
+student.demo@example.com      / StudentDemo123!
+highschool.demo@example.com   / StudentDemo123!
+researcher.demo@example.com   / ResearcherDemo123!
 ```
 
 ## Safety

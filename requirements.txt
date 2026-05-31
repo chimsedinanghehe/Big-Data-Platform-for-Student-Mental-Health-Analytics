@@ -14,3 +14,4 @@ openai
 google-cloud-storage
 pandas
 pyarrow
+psycopg[binary]

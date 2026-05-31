@@ -1,9 +1,16 @@
 import "./App.css";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+const DASHBOARD_URL = import.meta.env.VITE_DASHBOARD_URL || "http://127.0.0.1:8501";
 const SESSION_KEY = "student-support-chat-session";
+const AUTH_TOKEN_KEY = "student-platform-auth-token";
 
 const state = {
+  activeView: "dashboard",
+  authMode: "login",
+  authChecking: false,
+  authToken: "",
+  currentUser: null,
   messages: [
     {
       id: "welcome",
@@ -16,6 +23,20 @@ const state = {
   isLoading: false,
   error: "",
   sessionId: "",
+  auth: {
+    email: "",
+    password: "",
+    displayName: "",
+    role: "student",
+    status: "",
+    error: "",
+    isSaving: false,
+    studentProfile: {
+      age: "",
+      gender: "other",
+      learnerType: "university",
+    },
+  },
 };
 
 function createSessionId() {
@@ -30,6 +51,12 @@ function initializeSession() {
   const stored = localStorage.getItem(SESSION_KEY);
   state.sessionId = stored || createSessionId();
   localStorage.setItem(SESSION_KEY, state.sessionId);
+
+  state.authToken = localStorage.getItem(AUTH_TOKEN_KEY) || "";
+  if (state.authToken) {
+    state.authChecking = true;
+    loadCurrentUser();
+  }
 }
 
 function render() {
@@ -37,12 +64,202 @@ function render() {
   root.innerHTML = "";
 
   const main = el("main", { className: "app-shell" });
+  if (!state.currentUser) {
+    main.appendChild(renderAuthWorkspace());
+  } else {
+    main.appendChild(renderWorkspace());
+  }
+
+  root.appendChild(main);
+
+  const messageList = root.querySelector(".message-list");
+  if (messageList) {
+    messageList.scrollTop = messageList.scrollHeight;
+  }
+}
+
+function renderAuthWorkspace() {
+  const workspace = el("section", { className: "workspace auth-workspace" });
+  const header = el("header", { className: "app-header auth-header" });
+  const titleWrap = el("div");
+  titleWrap.appendChild(el("h1", {}, "Student Mental Health Platform"));
+  titleWrap.appendChild(el("p", {}, "Login first to use the dashboard and chatbot."));
+  header.appendChild(titleWrap);
+  workspace.appendChild(header);
+
+  if (state.authChecking) {
+    const panel = el("section", { className: "auth-panel" });
+    panel.appendChild(el("div", { className: "empty-state" }, "Checking session..."));
+    workspace.appendChild(panel);
+    return workspace;
+  }
+
+  workspace.appendChild(renderAuth());
+  return workspace;
+}
+
+function renderWorkspace() {
+  normalizeActiveView();
+
+  const workspace = el("section", { className: `workspace app-workspace role-${state.currentUser.role}` });
+  workspace.appendChild(renderTopBar());
+
+  const body = el("div", { className: "app-body" });
+  body.appendChild(renderSidebar());
+
+  const content = el("section", { className: "main-content" });
+  content.appendChild(renderActiveView());
+  body.appendChild(content);
+  workspace.appendChild(body);
+  return workspace;
+}
+
+function renderTopBar() {
+  const header = el("header", { className: "topbar" });
+  const titleWrap = el("div");
+  titleWrap.appendChild(el("h1", {}, "Student Mental Health Platform"));
+  titleWrap.appendChild(el("p", {}, state.currentUser.role === "student" ? "Chatbot and account profile." : "Analytics dashboard and account profile."));
+  header.appendChild(titleWrap);
+
+  const right = el("div", { className: "header-actions" });
+  right.appendChild(el("div", { className: "account-chip" }, `${state.currentUser.display_name} | ${state.currentUser.role}`));
+  const logoutButton = el("button", { type: "button", className: "secondary-button" }, "Logout");
+  logoutButton.addEventListener("click", logout);
+  right.appendChild(logoutButton);
+  header.appendChild(right);
+  return header;
+}
+
+function renderSidebar() {
+  const sidebar = el("aside", { className: "sidebar", "aria-label": "Workspace navigation" });
+  const label = el("div", { className: "sidebar-label" }, "Workspace");
+  sidebar.appendChild(label);
+
+  const nav = el("nav", { className: "side-nav" });
+  for (const item of getNavItems()) {
+    nav.appendChild(renderSideNavItem(item.view, item.label));
+  }
+  sidebar.appendChild(nav);
+  return sidebar;
+}
+
+function renderSideNavItem(view, label) {
+  const button = el(
+    "button",
+    {
+      type: "button",
+      className: state.activeView === view ? "side-nav-item active" : "side-nav-item",
+    },
+    label,
+  );
+  button.addEventListener("click", () => {
+    state.activeView = view;
+    render();
+  });
+  return button;
+}
+
+function getNavItems() {
+  if (state.currentUser.role === "student") {
+    return [
+      { view: "chat", label: "Chatbot" },
+      { view: "profile", label: "Profile" },
+    ];
+  }
+  return [
+    { view: "dashboard", label: "Dashboard" },
+    { view: "profile", label: "Profile" },
+  ];
+}
+
+function normalizeActiveView() {
+  const allowed = getNavItems().map((item) => item.view);
+  if (!allowed.includes(state.activeView)) {
+    state.activeView = allowed[0];
+  }
+}
+
+function renderActiveView() {
+  if (state.activeView === "chat") {
+    return renderChat();
+  }
+  if (state.activeView === "profile") {
+    return renderProfile();
+  }
+  return renderDashboard();
+}
+
+function renderAuth() {
+  const panel = el("section", {
+    className: `auth-panel auth-mode-${state.authMode}`,
+    "aria-label": "Authentication",
+  });
+
+  const modeTabs = el("div", { className: "mode-tabs" });
+  modeTabs.appendChild(renderModeButton("login", "Login"));
+  modeTabs.appendChild(renderModeButton("register", "Register"));
+  panel.appendChild(modeTabs);
+
+  const form = el("form", { className: `user-form wide auth-form auth-form-${state.authMode}` });
+  form.appendChild(renderInput("Email", "email", state.auth.email, (value) => {
+    state.auth.email = value;
+  }));
+  form.appendChild(renderInput("Password", "password", state.auth.password, (value) => {
+    state.auth.password = value;
+  }));
+
+  if (state.authMode === "register") {
+    form.appendChild(renderInput("Display name", "text", state.auth.displayName, (value) => {
+      state.auth.displayName = value;
+    }));
+    form.appendChild(renderRoleField());
+    if (state.auth.role === "student") {
+      appendStudentFields(form);
+    }
+  }
+
+  const buttonText = state.auth.isSaving ? "Working..." : state.authMode === "login" ? "Login" : "Register";
+  const button = el("button", { type: "submit", className: "primary-button" }, buttonText);
+  button.disabled = state.auth.isSaving;
+  form.appendChild(button);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    state.authMode === "login" ? login() : register();
+  });
+  panel.appendChild(form);
+
+  appendStatus(panel);
+  return panel;
+}
+
+function renderModeButton(mode, label) {
+  const button = el("button", { type: "button", className: state.authMode === mode ? "tab active" : "tab" }, label);
+  button.addEventListener("click", () => {
+    state.authMode = mode;
+    state.auth.status = "";
+    state.auth.error = "";
+    render();
+  });
+  return button;
+}
+
+function renderDashboard() {
+  const panel = el("section", { className: "dashboard-panel", "aria-label": "Analytics dashboard" });
+  panel.appendChild(el("iframe", {
+    className: "dashboard-frame",
+    title: "Mental school analytics dashboard",
+    src: DASHBOARD_URL,
+  }));
+  return panel;
+}
+
+function renderChat() {
   const panel = el("section", {
     className: "chat-panel",
     "aria-label": "Student support chatbot",
   });
 
-  panel.appendChild(renderHeader());
+  panel.appendChild(renderChatHeader());
   panel.appendChild(renderMessages());
 
   if (state.error) {
@@ -50,21 +267,137 @@ function render() {
   }
 
   panel.appendChild(renderComposer());
-  main.appendChild(panel);
-  root.appendChild(main);
-
-  const messageList = panel.querySelector(".message-list");
-  messageList.scrollTop = messageList.scrollHeight;
+  return panel;
 }
 
-function renderHeader() {
-  const header = el("header", { className: "chat-header" });
+function renderChatHeader() {
+  const header = el("header", { className: "panel-header" });
   const titleWrap = el("div");
-  titleWrap.appendChild(el("h1", {}, "Student Support Chat"));
+  titleWrap.appendChild(el("h2", {}, "Student Support Chat"));
   titleWrap.appendChild(el("p", {}, "Grounded wellbeing guidance from the project knowledge base."));
   header.appendChild(titleWrap);
   header.appendChild(el("div", { className: "status-pill" }, "Qdrant RAG"));
   return header;
+}
+
+function renderProfile() {
+  const panel = el("section", { className: "user-panel", "aria-label": "User profile" });
+  const header = el("header", { className: "panel-header" });
+  const titleWrap = el("div");
+  titleWrap.appendChild(el("h2", {}, "Profile"));
+  titleWrap.appendChild(el("p", {}, "Only account fields required for the app are shown here."));
+  header.appendChild(titleWrap);
+  header.appendChild(el("div", { className: "status-pill" }, "PostgreSQL"));
+  panel.appendChild(header);
+
+  const form = el("form", { className: "user-form wide" });
+  form.appendChild(renderReadonlyField("Email", state.currentUser.email));
+  form.appendChild(renderInput("Display name", "text", state.auth.displayName, (value) => {
+    state.auth.displayName = value;
+  }));
+  form.appendChild(renderRoleField());
+  if (state.auth.role === "student") {
+    appendStudentFields(form);
+  }
+
+  const button = el("button", { type: "submit", className: "primary-button" }, state.auth.isSaving ? "Saving..." : "Save profile");
+  button.disabled = state.auth.isSaving;
+  form.appendChild(button);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveProfile();
+  });
+
+  panel.appendChild(form);
+  appendStatus(panel);
+  return panel;
+}
+
+function renderRoleField() {
+  const wrap = el("label", { className: "field" });
+  wrap.appendChild(el("span", {}, "Role"));
+  const select = el("select", {});
+  for (const [value, label] of [["student", "Student"], ["researcher", "Researcher"]]) {
+    const option = el("option", { value }, label);
+    if (state.auth.role === value) {
+      option.selected = true;
+    }
+    select.appendChild(option);
+  }
+  select.addEventListener("change", (event) => {
+    state.auth.role = event.target.value;
+    render();
+  });
+  wrap.appendChild(select);
+  return wrap;
+}
+
+function appendStudentFields(form) {
+  form.appendChild(renderInput("Age", "number", state.auth.studentProfile.age, (value) => {
+    state.auth.studentProfile.age = value;
+  }));
+  form.appendChild(renderSelect("Gender", state.auth.studentProfile.gender, [
+    ["male", "Male"],
+    ["female", "Female"],
+    ["other", "Other"],
+  ], (value) => {
+    state.auth.studentProfile.gender = value;
+  }));
+  form.appendChild(renderSelect("Learner type", state.auth.studentProfile.learnerType, [
+    ["elementary", "Elementary"],
+    ["middle_school", "Middle school"],
+    ["high_school", "High school"],
+    ["college", "College"],
+    ["university", "University"],
+    ["graduate", "Graduate"],
+    ["other", "Other"],
+  ], (value) => {
+    state.auth.studentProfile.learnerType = value;
+  }));
+}
+
+function appendStatus(panel) {
+  if (state.auth.status) {
+    panel.appendChild(el("div", { className: "success-banner" }, state.auth.status));
+  }
+  if (state.auth.error) {
+    panel.appendChild(el("div", { className: "error-banner" }, state.auth.error));
+  }
+}
+
+function renderInput(label, type, value, onInput) {
+  const wrap = el("label", { className: "field" });
+  wrap.appendChild(el("span", {}, label));
+  const input = el("input", { type });
+  input.value = value ?? "";
+  input.addEventListener("input", (event) => onInput(event.target.value));
+  wrap.appendChild(input);
+  return wrap;
+}
+
+function renderReadonlyField(label, value) {
+  const wrap = el("label", { className: "field" });
+  wrap.appendChild(el("span", {}, label));
+  const input = el("input", { type: "text", readonly: "readonly" });
+  input.value = value ?? "";
+  wrap.appendChild(input);
+  return wrap;
+}
+
+function renderSelect(label, value, options, onInput) {
+  const wrap = el("label", { className: "field" });
+  wrap.appendChild(el("span", {}, label));
+  const select = el("select", {});
+  for (const [optionValue, optionLabel] of options) {
+    const option = el("option", { value: optionValue }, optionLabel);
+    if (value === optionValue) {
+      option.selected = true;
+    }
+    select.appendChild(option);
+  }
+  select.addEventListener("change", (event) => onInput(event.target.value));
+  wrap.appendChild(select);
+  return wrap;
 }
 
 function renderMessages() {
@@ -75,12 +408,7 @@ function renderMessages() {
   }
 
   if (state.isLoading) {
-    const loading = {
-      id: "loading",
-      role: "assistant",
-      content: "Thinking...",
-    };
-    const node = renderMessage(loading);
+    const node = renderMessage({ id: "loading", role: "assistant", content: "Thinking..." });
     node.querySelector(".message-body").classList.add("loading");
     list.appendChild(node);
   }
@@ -144,17 +472,10 @@ async function handleSubmit() {
 
   const chatHistory = state.messages
     .filter((message) => message.id !== "welcome")
-    .map((message) => ({
-      role: message.role,
-      content: message.content,
-    }))
+    .map((message) => ({ role: message.role, content: message.content }))
     .slice(-10);
 
-  state.messages.push({
-    id: createSessionId(),
-    role: "user",
-    content: question,
-  });
+  state.messages.push({ id: createSessionId(), role: "user", content: question });
   state.input = "";
   state.error = "";
   state.isLoading = true;
@@ -163,9 +484,7 @@ async function handleSubmit() {
   try {
     const response = await fetch(`${API_BASE_URL}/api/rag/ask`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         question,
         session_id: state.sessionId || createSessionId(),
@@ -183,11 +502,7 @@ async function handleSubmit() {
       localStorage.setItem(SESSION_KEY, state.sessionId);
     }
 
-    state.messages.push({
-      id: createSessionId(),
-      role: "assistant",
-      content: payload.answer,
-    });
+    state.messages.push({ id: createSessionId(), role: "assistant", content: payload.answer });
   } catch (error) {
     state.error = error instanceof Error ? error.message : "Unable to send the message.";
   } finally {
@@ -196,11 +511,179 @@ async function handleSubmit() {
   }
 }
 
+async function register() {
+  const payload = {
+    email: state.auth.email,
+    password: state.auth.password,
+    display_name: state.auth.displayName,
+    role: state.auth.role,
+  };
+  if (state.auth.role === "student") {
+    payload.student_profile = buildStudentProfilePayload();
+  } else {
+    payload.researcher_profile = {};
+  }
+  await authenticate("/api/auth/register", payload, "Registration complete.");
+}
+
+async function login() {
+  await authenticate("/api/auth/login", {
+    email: state.auth.email,
+    password: state.auth.password,
+  }, "Login complete.");
+}
+
+async function authenticate(path, body, successMessage) {
+  state.auth.isSaving = true;
+  state.auth.status = "";
+  state.auth.error = "";
+  render();
+
+  try {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload?.detail?.message || "Authentication failed.");
+    }
+    applyAuth(payload);
+    state.auth.status = successMessage;
+    state.activeView = defaultViewForRole(payload.user.role);
+  } catch (error) {
+    state.auth.error = error instanceof Error ? error.message : "Authentication failed.";
+  } finally {
+    state.auth.isSaving = false;
+    render();
+  }
+}
+
+async function loadCurrentUser() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
+      headers: authHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error("Session expired.");
+    }
+    state.currentUser = await response.json();
+    syncAuthFormFromUser(state.currentUser);
+    normalizeActiveView();
+  } catch {
+    logout(false);
+  } finally {
+    state.authChecking = false;
+    render();
+  }
+}
+
+async function saveProfile() {
+  state.auth.isSaving = true;
+  state.auth.status = "";
+  state.auth.error = "";
+  render();
+
+  const payload = {
+    display_name: state.auth.displayName,
+    role: state.auth.role,
+  };
+  if (state.auth.role === "student") {
+    payload.student_profile = buildStudentProfilePayload();
+  } else {
+    payload.researcher_profile = {};
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/users/me`, {
+      method: "PUT",
+      headers: {
+        ...authHeaders(),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result?.detail?.message || "Unable to save profile.");
+    }
+    state.currentUser = result;
+    syncAuthFormFromUser(result);
+    normalizeActiveView();
+    state.auth.status = "Profile saved.";
+  } catch (error) {
+    state.auth.error = error instanceof Error ? error.message : "Unable to save profile.";
+  } finally {
+    state.auth.isSaving = false;
+    render();
+  }
+}
+
+function applyAuth(payload) {
+  state.authToken = payload.access_token;
+  localStorage.setItem(AUTH_TOKEN_KEY, state.authToken);
+  state.currentUser = payload.user;
+  syncAuthFormFromUser(payload.user);
+}
+
+function logout(shouldRender = true) {
+  state.authToken = "";
+  state.currentUser = null;
+  state.auth.password = "";
+  state.auth.status = "";
+  state.auth.error = "";
+  state.authChecking = false;
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  if (shouldRender) {
+    render();
+  }
+}
+
+function syncAuthFormFromUser(user) {
+  state.auth.email = user.email || "";
+  state.auth.displayName = user.display_name || "";
+  state.auth.role = user.role || "student";
+  const profile = user.profile || {};
+  state.auth.studentProfile = {
+    age: profile.age ?? "",
+    gender: profile.gender || "other",
+    learnerType: profile.learner_type || "university",
+  };
+}
+
+function defaultViewForRole(role) {
+  return role === "student" ? "chat" : "dashboard";
+}
+
+function buildStudentProfilePayload() {
+  return {
+    age: optionalNumber(state.auth.studentProfile.age),
+    gender: state.auth.studentProfile.gender,
+    learner_type: state.auth.studentProfile.learnerType,
+  };
+}
+
+function authHeaders() {
+  return {
+    Authorization: `Bearer ${state.authToken}`,
+  };
+}
+
+function optionalNumber(value) {
+  if (value === null || value === undefined || String(value).trim() === "") {
+    return null;
+  }
+  return Number(value);
+}
+
 function el(tagName, attributes = {}, text = "") {
   const node = document.createElement(tagName);
   for (const [name, value] of Object.entries(attributes)) {
     if (name === "className") {
       node.className = value;
+    } else if (name === "readonly") {
+      node.readOnly = true;
     } else {
       node.setAttribute(name, value);
     }
