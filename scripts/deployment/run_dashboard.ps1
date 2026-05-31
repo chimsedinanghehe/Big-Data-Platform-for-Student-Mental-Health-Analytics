@@ -12,12 +12,7 @@ $ErrorActionPreference = "Stop"
 
 $ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $Python = Join-Path $ProjectRoot "venv\Scripts\python.exe"
-$DashboardCandidates = @(
-    (Join-Path $ProjectRoot "MentalSchool_Dashboard"),
-    (Join-Path $ProjectRoot "MentalSchool-Dashboard"),
-    (Join-Path $ProjectRoot "mental-school-dashboard")
-)
-$DashboardRoot = $DashboardCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+$DashboardRoot = Join-Path $ProjectRoot "MentalSchool_Dashboard"
 
 if (-not (Test-Path $Python)) {
     Write-Host "Missing virtualenv Python: $Python" -ForegroundColor Red
