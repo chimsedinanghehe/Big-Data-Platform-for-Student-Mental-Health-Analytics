@@ -1,0 +1,513 @@
+YRBS Mental Health Dashboard - Cot loc, cum chi so, Q va ten cau hoi
+Cap nhat theo code hien tai trong app.py va utils/dashboard_core.py
+
+1. Du lieu dang ghep trong dashboard
+
+- Mental School: data/Mental School.csv
+  - File co 117 cot raw, trong do co 107 cot Q.
+  - Khi preprocess, code strip ten cot va chi giu cac cot co dang q + so: q1 den q107.
+  - Sau do them cac cot metadata: Data Source, Population, Study Year, __harmonized_schema.
+
+- HMS:
+  - data/HMS_2022-2023_PUBLIC_instchars.csv: header 1620 cot, dashboard doc 103 cot scoped.
+  - data/HMS_2023-2024_PUBLIC_instchars.csv: header 1554 cot, dashboard doc 101 cot scoped.
+  - data/HMS_2024-2025_PUBLIC_instchars.csv: header 1608 cot, dashboard doc 104 cot scoped.
+  - Danh sach scoped trong code gom 118 ten cot. File HMS nam nao co cot nao trong danh sach thi doc cot do.
+  - HMS duoc chuan hoa thanh Population = College/University, roi ghep chung voi Mental School.
+
+- Kich thuoc sau khi ghep va preprocess tren du lieu local hien tai:
+  - Combined raw: 285,973 dong, 237 cot.
+  - Raw analysis sau khi tao Target va loai dong khong co target hop le: 262,854 dong, 120 cot.
+  - Cleaned/engineered: 262,854 dong, 155 cot.
+
+2. Cac cot bo loc sidebar dang dung
+
+- Population: tach Middle/High School va College/University.
+- Data Source: tach Mental School va tung file/nam HMS.
+- q1 - Age.
+- q2 - Gender.
+- q3 - Grade.
+- Target: Lower Risk hoac At Risk.
+
+3. Target mental health risk
+
+- Target = At Risk khi q26 == 1 hoac q84 >= 4.
+- Mental School:
+  - q26 = Felt sad or hopeless.
+  - q84 = Poor mental health days.
+- HMS:
+  - q26 la proxy tu dep_any/dep_maj, neu thieu thi dung deprawsc >= 10.
+  - q84 la proxy severity tu deprawsc va anx_score; lay muc nghiem trong cao nhat giua depression/anxiety.
+- Target nay la chi bao nghien cuu mo ta, khong phai chan doan lam sang.
+
+4. Feature model dang dung
+
+Model khong dua toan bo Q vao Random Forest. Feature model hien tai chi gom:
+
+- q1 - Age.
+- q2 - Gender.
+- q3 - Grade.
+- Family Pressure Index.
+- Academic Pressure Index.
+- Peer & Safety Stress Index.
+- Trauma Exposure Index.
+- Substance Coping Risk Index.
+- Lifestyle Recovery Deficit.
+
+Cac Q mental health truc tiep nhu q26, q27, q28, q29, q30 va q84 khong duoc dung lam input model de tranh leakage. q26 va q84 chi dung de tao Target.
+
+5. Cac construct/cum chinh dang dung trong dashboard
+
+5.1. Family Pressure Index
+- Cum: Family Pressure.
+- Mental School Q nguon:
+  - Q89 - Verbal abuse by adult at home.
+  - Q90 - Physical abuse by adult at home.
+  - Q91 - Witnessed domestic violence.
+  - Q99 - Basic needs met by adult (food/clothing/safety).
+  - Q100 - Lived with substance abuser.
+  - Q101 - Lived with mentally ill/suicidal.
+  - Q102 - Parent incarcerated.
+  - Q104 - Parents know whereabouts.
+- HMS source columns/proxy:
+  - housing_worry, food_worry.
+  - fincur, finpast.
+  - afford_school, afford_food, afford_transp, afford_hc, afford_books, afford_house.
+  - pay_worry, pay_worry1, pay_worry2, pay_worry3.
+  - fam_support_aca, prof_support_aca.
+
+5.2. Academic Pressure Index
+- Cum: Academic Pressure.
+- Mental School Q nguon:
+  - Q87 - Self-reported grades.
+  - Q103 - School connectedness.
+  - Q105 - Unfair discipline at school.
+  - Q106 - Difficulty concentrating/remembering.
+- HMS source columns/proxy:
+  - aca_impa.
+  - stress1, stress2, stress3, stress4.
+  - compet_sch.
+  - grade_curv.
+  - imposter_1, imposter_2, imposter_3, imposter_4, imposter_5.
+  - failed.
+  - adjust_aca_1, adjust_aca_2, time_manage, doubt_school_1.
+
+5.3. Peer & Safety Stress Index
+- Cum: Peer & Safety Stress.
+- Mental School Q nguon:
+  - Q14 - Skipped school (felt unsafe).
+  - Q15 - Threatened/injured with weapon.
+  - Q18 - Witnessed neighbourhood violence.
+  - Q24 - Bullied at school.
+  - Q25 - Cyberbullied.
+- HMS source columns/proxy:
+  - belong1, belong2, belong8, belong9.
+  - discrim_race, discrim_culture, discrim_gender, discrim_sexual, discrim_other.
+  - safe_on_day, safe_on_night, safe_off_day, safe_off_night.
+  - hostcli_distress.
+
+5.4. Trauma Exposure Index
+- Cum: Trauma Exposure.
+- Mental School Q nguon:
+  - Q19 - Forced sexual intercourse.
+  - Q20 - Other forced sex acts.
+  - Q21 - Dating violence (forced sex).
+  - Q22 - Dating violence (physical).
+  - Q88 - Forced sex by adult (5+ years older).
+- HMS source columns/proxy:
+  - abuse_life, abuse_recent.
+  - stalk_exp.
+  - assault_sex, sa_exp.
+  - IPV_1, IPV_2, IPV_3, IPV_4, IPV_5.
+  - partner_phys, partner_insult, partner_threat, partner_curse.
+
+5.5. Substance Coping Risk Index
+- Cum: Substance Coping.
+- Mental School Q nguon:
+  - Q33 - Current cigarette use.
+  - Q36 - Current e-cigarette use.
+  - Q42 - Current alcohol use.
+  - Q43 - Binge drinking.
+  - Q48 - Current marijuana use.
+  - Q92 - Current misuse of painkillers.
+- HMS source columns/proxy:
+  - alc_any.
+  - binge_fr.
+  - sub_any.
+  - sub_cig.
+  - smok_freq, smok_vape.
+  - drug_mar.
+  - mar_freq.
+
+5.6. Lifestyle Recovery Deficit
+- Cum: Recovery Lifestyle.
+- Mental School Q nguon:
+  - Q75 - Breakfast frequency.
+  - Q76 - Physical activity (60+ min).
+  - Q80 - Social media screen time.
+  - Q85 - Hours of sleep.
+  - Q96 - Water intake.
+- HMS source columns/proxy:
+  - sleep_wknight, sleep_wkend.
+  - exerc, exerc_range5, exerc_range4.
+  - food_worry.
+
+6. HMS pseudo-Q duoc tao de ghep chung voi Mental School
+
+- q1 - Age:
+  - HMS source: age.
+  - Chi giu age 18 den 80; outlier set missing.
+  - Map ve bucket: 18 -> code 7, 19-20 -> code 8, 21-24 -> code 9, 25-34 -> code 10, 35+ -> code 11.
+
+- q2 - Gender:
+  - HMS source: sex_birth, gender_female, gender_male, gender_nonbin, gender_queer, gender_trans, gender_transm, gender_transf, gender_selfID, gender_selfid, gender_prefnoresp.
+
+- q3 - Grade:
+  - HMS source: yr_sch.
+  - Map vao nhom college year: College 1st year, 2nd year, 3rd year, 4th+ year, Graduate/Professional, Other college.
+
+- q26 - Felt sad or hopeless:
+  - HMS proxy: dep_any hoac dep_maj; fallback deprawsc >= 10.
+
+- q27 - Considered suicide:
+  - HMS source: sui_idea.
+
+- q28 - Made suicide plan:
+  - HMS source: sui_plan.
+
+- q29 - Attempted suicide:
+  - HMS source: sui_att.
+
+- q84 - Poor mental health days:
+  - HMS proxy: deprawsc va anx_score, chuyen ve thang 1 den 5 theo severity.
+
+7. Research-scope Q duoc dashboard doc sau khi ghep
+
+Dashboard research hien tai tap trung vao 35 Q sau:
+
+- Target/source Q:
+  - Q26 - Felt sad or hopeless.
+  - Q84 - Poor mental health days.
+
+- Family Pressure:
+  - Q89 - Verbal abuse by adult at home.
+  - Q90 - Physical abuse by adult at home.
+  - Q91 - Witnessed domestic violence.
+  - Q99 - Basic needs met by adult (food/clothing/safety).
+  - Q100 - Lived with substance abuser.
+  - Q101 - Lived with mentally ill/suicidal.
+  - Q102 - Parent incarcerated.
+  - Q104 - Parents know whereabouts.
+
+- Academic Pressure:
+  - Q87 - Self-reported grades.
+  - Q103 - School connectedness.
+  - Q105 - Unfair discipline at school.
+  - Q106 - Difficulty concentrating/remembering.
+
+- Peer & Safety Stress:
+  - Q14 - Skipped school (felt unsafe).
+  - Q15 - Threatened/injured with weapon.
+  - Q18 - Witnessed neighbourhood violence.
+  - Q24 - Bullied at school.
+  - Q25 - Cyberbullied.
+
+- Trauma Exposure:
+  - Q19 - Forced sexual intercourse.
+  - Q20 - Other forced sex acts.
+  - Q21 - Dating violence (forced sex).
+  - Q22 - Dating violence (physical).
+  - Q88 - Forced sex by adult (5+ years older).
+
+- Substance Coping:
+  - Q33 - Current cigarette use.
+  - Q36 - Current e-cigarette use.
+  - Q42 - Current alcohol use.
+  - Q43 - Binge drinking.
+  - Q48 - Current marijuana use.
+  - Q92 - Current misuse of painkillers.
+
+- Recovery Lifestyle:
+  - Q75 - Breakfast frequency.
+  - Q76 - Physical activity (60+ min).
+  - Q80 - Social media screen time.
+  - Q85 - Hours of sleep.
+  - Q96 - Water intake.
+
+8. Catalog cum raw Q trong code dashboard
+
+Phan nay la mapping Q -> cum noi dung trong dashboard_core.py. Q26 duoc tach rieng o phan Target vi code khong dua Q26 vao CLUSTER_MAP.
+
+- Demographics:
+  - Q1 - Age.
+  - Q2 - Gender.
+  - Q3 - Grade.
+  - Q4 - Hispanic/Latino.
+  - Q5 - Race.
+  - Q6 - Height (m).
+  - Q7 - Weight (kg).
+
+- Safety & Driving:
+  - Q8 - Seatbelt use.
+  - Q9 - Rode with drunk driver.
+  - Q10 - Drove after drinking.
+  - Q11 - Texted while driving.
+
+- Violence & Safety:
+  - Q12 - Carried weapon to school.
+  - Q13 - Carried a gun.
+  - Q14 - Skipped school (felt unsafe).
+  - Q15 - Threatened/injured with weapon.
+  - Q16 - Physical fight (any).
+  - Q17 - Physical fight at school.
+  - Q18 - Witnessed neighbourhood violence.
+
+- Sexual Violence:
+  - Q19 - Forced sexual intercourse.
+  - Q20 - Other forced sex acts.
+  - Q21 - Dating violence (forced sex).
+  - Q22 - Dating violence (physical).
+  - Q88 - Forced sex by adult (5+ years older).
+
+- School Climate & Academic Context:
+  - Q23 - Discriminated (race/ethnicity).
+  - Q24 - Bullied at school.
+  - Q25 - Cyberbullied.
+  - Q87 - Self-reported grades.
+  - Q103 - School connectedness.
+  - Q105 - Unfair discipline at school.
+  - Q107 - English proficiency.
+
+- Mental Health Indicators:
+  - Q27 - Considered suicide.
+  - Q28 - Made suicide plan.
+  - Q29 - Attempted suicide.
+  - Q30 - Suicide attempt needed treatment.
+  - Q84 - Poor mental health days.
+
+- Substance Use:
+  - Q31 - Ever smoked cigarettes.
+  - Q32 - Smoked before age 13.
+  - Q33 - Current cigarette use.
+  - Q34 - Cigarettes per day.
+  - Q35 - Ever used e-cigarettes.
+  - Q36 - Current e-cigarette use.
+  - Q37 - Source of e-cigarettes.
+  - Q38 - Smokeless tobacco.
+  - Q39 - Cigars.
+  - Q40 - Tried to quit smoking.
+  - Q41 - Drank alcohol before 13.
+  - Q42 - Current alcohol use.
+  - Q43 - Binge drinking.
+  - Q44 - Max drinks in a row.
+  - Q45 - Usual alcohol source.
+  - Q46 - Ever used marijuana.
+  - Q47 - Marijuana initiation age.
+  - Q48 - Current marijuana use.
+  - Q49 - Misused prescription painkillers.
+  - Q50 - Ever cocaine.
+  - Q51 - Ever inhalants.
+  - Q52 - Ever heroin.
+  - Q53 - Ever methamphetamine.
+  - Q54 - Ever ecstasy.
+  - Q55 - Ever injected drugs.
+  - Q92 - Current misuse of painkillers.
+  - Q93 - Ever hallucinogens.
+
+- Sexual Behavior:
+  - Q56 - Ever had sex.
+  - Q57 - First sex before 13.
+  - Q58 - Lifetime partners (4+).
+  - Q59 - Sexually active (3 mo).
+  - Q60 - Alcohol/drugs before last sex.
+  - Q61 - Condom use at last sex.
+  - Q62 - Birth control use.
+  - Q94 - Asked verbal consent before sex.
+
+- Sexual Identity & Contacts:
+  - Q63 - Sex of sexual partners.
+  - Q64 - Sexual orientation.
+  - Q65 - Transgender identity.
+
+- Lifestyle Factors:
+  - Q66 - Self-perceived weight.
+  - Q67 - Weight intention.
+  - Q68 - 100% fruit juice.
+  - Q69 - Fruit intake.
+  - Q70 - Salad intake.
+  - Q71 - Potato intake.
+  - Q72 - Carrot intake.
+  - Q73 - Other vegetables intake.
+  - Q74 - Soda intake.
+  - Q75 - Breakfast frequency.
+  - Q76 - Physical activity (60+ min).
+  - Q77 - PE class attendance.
+  - Q78 - Sports team.
+  - Q85 - Hours of sleep.
+  - Q95 - Sports drinks intake.
+  - Q96 - Water intake.
+  - Q97 - Muscle strengthening.
+
+- Other Health Risks:
+  - Q79 - Sports concussion.
+  - Q98 - Sunburn frequency.
+
+- Digital Behavior:
+  - Q80 - Social media screen time.
+
+- Health Care & Preventive Services:
+  - Q81 - Ever tested HIV.
+  - Q82 - Tested for STD.
+  - Q83 - Last dental visit.
+
+- Housing & Basic Needs:
+  - Q86 - Place of sleep.
+  - Q99 - Basic needs met by adult (food/clothing/safety).
+
+- Family & ACEs:
+  - Q89 - Verbal abuse by adult at home.
+  - Q90 - Physical abuse by adult at home.
+  - Q91 - Witnessed domestic violence.
+  - Q100 - Lived with substance abuser.
+  - Q101 - Lived with mentally ill/suicidal.
+  - Q102 - Parent incarcerated.
+
+- Family Support & Monitoring:
+  - Q104 - Parents know whereabouts.
+
+- Functional Difficulty:
+  - Q106 - Difficulty concentrating/remembering.
+
+9. Danh sach HMS_SCOPED_COLUMNS trong code
+
+Day la 118 ten cot HMS duoc phep doc neu co trong header tung file:
+
+- StartDate
+- Finished
+- RecordedDate
+- responseid
+- schoolnum
+- inst_hmsyear
+- age
+- sex_birth
+- gender_male
+- gender_female
+- gender_queer
+- gender_nonbin
+- gender_trans
+- gender_transm
+- gender_transf
+- gender_prefnoresp
+- gender_selfID
+- gender_selfid
+- yr_sch
+- enroll
+- deprawsc
+- anx_score
+- dep_maj
+- dep_any
+- anx_any
+- dep_or_anx
+- sui_idea
+- sui_plan
+- sui_att
+- phq9_1
+- phq9_9
+- gad7_1
+- gad7_7
+- housing_worry
+- food_worry
+- fincur
+- finpast
+- afford_school
+- afford_food
+- afford_transp
+- afford_hc
+- afford_books
+- afford_house
+- pay_worry
+- pay_worry1
+- pay_worry2
+- pay_worry3
+- aca_impa
+- stress1
+- stress2
+- stress3
+- stress4
+- compet_sch
+- grade_curv
+- imposter_1
+- imposter_2
+- imposter_3
+- imposter_4
+- imposter_5
+- failed
+- adjust_aca_1
+- adjust_aca_2
+- time_manage
+- doubt_school_1
+- fam_support_aca
+- prof_support_aca
+- belong1
+- belong2
+- belong8
+- belong9
+- discrim_race
+- discrim_culture
+- discrim_gender
+- discrim_sexual
+- discrim_other
+- safe_on_day
+- safe_on_night
+- safe_off_day
+- safe_off_night
+- hostcli_distress
+- abuse_life
+- abuse_recent
+- stalk_exp
+- assault_sex
+- assault_sex_y
+- sa_exp
+- IPV_1
+- IPV_2
+- IPV_3
+- IPV_4
+- IPV_5
+- partner_phys
+- partner_insult
+- partner_threat
+- partner_curse
+- alc_any
+- alc_binge_female
+- alc_binge_male
+- alc_binge_othgen
+- binge_fr
+- sub_any
+- sub_cig
+- smok_freq
+- smok_vape
+- risk_alc
+- risk_cig
+- risk_mar
+- risk_presc
+- risk_vape
+- drug_mar
+- mar_freq
+- sleep_wknight
+- sleep_wkend
+- exerc
+- exerc_range5
+- exerc_range4
+- nrweight
+- weighted_sum
+
+10. HMS scoped columns thieu theo tung file local
+
+- HMS_2022-2023_PUBLIC_instchars.csv thieu:
+  - Finished, IPV_1, IPV_2, IPV_3, IPV_4, IPV_5, RecordedDate, StartDate, exerc, gender_selfID, gender_trans, pay_worry1, pay_worry2, pay_worry3, weighted_sum.
+
+- HMS_2023-2024_PUBLIC_instchars.csv thieu:
+  - Finished, assault_sex, exerc_range4, exerc_range5, gender_selfid, gender_transf, gender_transm, partner_curse, partner_insult, partner_phys, partner_threat, pay_worry1, pay_worry2, pay_worry3, sleep_wkend, sleep_wknight, weighted_sum.
+
+- HMS_2024-2025_PUBLIC_instchars.csv thieu:
+  - assault_sex_y, exerc_range4, exerc_range5, gender_selfid, gender_transf, gender_transm, partner_curse, partner_insult, partner_phys, partner_threat, pay_worry, smok_freq, smok_vape, sub_cig.
