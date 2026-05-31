@@ -30,6 +30,8 @@ const state = {
     role: "student",
     status: "",
     error: "",
+    fieldErrors: {},
+    focusField: "",
     isSaving: false,
     studentProfile: {
       age: "",
@@ -63,7 +65,9 @@ function render() {
   const root = document.getElementById("root");
   root.innerHTML = "";
 
-  const main = el("main", { className: "app-shell" });
+  const main = el("main", {
+    className: state.currentUser ? "app-shell app-main-shell" : "app-shell auth-main-shell",
+  });
   if (!state.currentUser) {
     main.appendChild(renderAuthWorkspace());
   } else {
@@ -75,6 +79,15 @@ function render() {
   const messageList = root.querySelector(".message-list");
   if (messageList) {
     messageList.scrollTop = messageList.scrollHeight;
+  }
+
+  if (state.auth.focusField) {
+    const field = root.querySelector(`[data-field="${state.auth.focusField}"]`);
+    if (field) {
+      field.focus();
+      field.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+    state.auth.focusField = "";
   }
 }
 
@@ -201,16 +214,16 @@ function renderAuth() {
   panel.appendChild(modeTabs);
 
   const form = el("form", { className: `user-form wide auth-form auth-form-${state.authMode}` });
-  form.appendChild(renderInput("Email", "email", state.auth.email, (value) => {
-    state.auth.email = value;
+  form.appendChild(renderInput("Email", "email", state.auth.email, "email", "you@example.com", (value) => {
+    updateAuthField("email", value);
   }));
-  form.appendChild(renderInput("Password", "password", state.auth.password, (value) => {
-    state.auth.password = value;
+  form.appendChild(renderInput("Password", "password", state.auth.password, "password", state.authMode === "login" ? "Enter your password" : "At least 8 characters", (value) => {
+    updateAuthField("password", value);
   }));
 
   if (state.authMode === "register") {
-    form.appendChild(renderInput("Display name", "text", state.auth.displayName, (value) => {
-      state.auth.displayName = value;
+    form.appendChild(renderInput("Display name", "text", state.auth.displayName, "displayName", "Name shown in the app", (value) => {
+      updateAuthField("displayName", value);
     }));
     form.appendChild(renderRoleField());
     if (state.auth.role === "student") {
@@ -238,6 +251,8 @@ function renderModeButton(mode, label) {
     state.authMode = mode;
     state.auth.status = "";
     state.auth.error = "";
+    state.auth.fieldErrors = {};
+    state.auth.focusField = "";
     render();
   });
   return button;
@@ -292,8 +307,8 @@ function renderProfile() {
 
   const form = el("form", { className: "user-form wide" });
   form.appendChild(renderReadonlyField("Email", state.currentUser.email));
-  form.appendChild(renderInput("Display name", "text", state.auth.displayName, (value) => {
-    state.auth.displayName = value;
+  form.appendChild(renderInput("Display name", "text", state.auth.displayName, "displayName", "Name shown in the app", (value) => {
+    updateAuthField("displayName", value);
   }));
   form.appendChild(renderRoleField());
   if (state.auth.role === "student") {
@@ -314,9 +329,10 @@ function renderProfile() {
 }
 
 function renderRoleField() {
-  const wrap = el("label", { className: "field" });
+  const error = state.auth.fieldErrors.role;
+  const wrap = el("label", { className: error ? "field has-error" : "field" });
   wrap.appendChild(el("span", {}, "Role"));
-  const select = el("select", {});
+  const select = el("select", { "data-field": "role" });
   for (const [value, label] of [["student", "Student"], ["researcher", "Researcher"]]) {
     const option = el("option", { value }, label);
     if (state.auth.role === value) {
@@ -326,15 +342,20 @@ function renderRoleField() {
   }
   select.addEventListener("change", (event) => {
     state.auth.role = event.target.value;
+    clearFieldError("role");
+    state.auth.fieldErrors = {};
+    state.auth.focusField = "";
     render();
   });
   wrap.appendChild(select);
+  appendFieldError(wrap, "role");
   return wrap;
 }
 
 function appendStudentFields(form) {
-  form.appendChild(renderInput("Age", "number", state.auth.studentProfile.age, (value) => {
+  form.appendChild(renderInput("Age", "number", state.auth.studentProfile.age, "age", "e.g. 20", (value) => {
     state.auth.studentProfile.age = value;
+    clearFieldError("age");
   }));
   form.appendChild(renderSelect("Gender", state.auth.studentProfile.gender, [
     ["male", "Male"],
@@ -342,6 +363,7 @@ function appendStudentFields(form) {
     ["other", "Other"],
   ], (value) => {
     state.auth.studentProfile.gender = value;
+    clearFieldError("gender");
   }));
   form.appendChild(renderSelect("Learner type", state.auth.studentProfile.learnerType, [
     ["elementary", "Elementary"],
@@ -353,6 +375,7 @@ function appendStudentFields(form) {
     ["other", "Other"],
   ], (value) => {
     state.auth.studentProfile.learnerType = value;
+    clearFieldError("learnerType");
   }));
 }
 
@@ -365,13 +388,20 @@ function appendStatus(panel) {
   }
 }
 
-function renderInput(label, type, value, onInput) {
-  const wrap = el("label", { className: "field" });
+function renderInput(label, type, value, fieldName, placeholder, onInput) {
+  const error = state.auth.fieldErrors[fieldName];
+  const wrap = el("label", { className: error ? "field has-error" : "field" });
   wrap.appendChild(el("span", {}, label));
-  const input = el("input", { type });
+  const input = el("input", {
+    type,
+    placeholder,
+    "data-field": fieldName,
+    "aria-invalid": error ? "true" : "false",
+  });
   input.value = value ?? "";
   input.addEventListener("input", (event) => onInput(event.target.value));
   wrap.appendChild(input);
+  appendFieldError(wrap, fieldName);
   return wrap;
 }
 
@@ -385,9 +415,14 @@ function renderReadonlyField(label, value) {
 }
 
 function renderSelect(label, value, options, onInput) {
-  const wrap = el("label", { className: "field" });
+  const fieldName = label === "Gender" ? "gender" : "learnerType";
+  const error = state.auth.fieldErrors[fieldName];
+  const wrap = el("label", { className: error ? "field has-error" : "field" });
   wrap.appendChild(el("span", {}, label));
-  const select = el("select", {});
+  const select = el("select", {
+    "data-field": fieldName,
+    "aria-invalid": error ? "true" : "false",
+  });
   for (const [optionValue, optionLabel] of options) {
     const option = el("option", { value: optionValue }, optionLabel);
     if (value === optionValue) {
@@ -397,6 +432,7 @@ function renderSelect(label, value, options, onInput) {
   }
   select.addEventListener("change", (event) => onInput(event.target.value));
   wrap.appendChild(select);
+  appendFieldError(wrap, fieldName);
   return wrap;
 }
 
@@ -512,6 +548,11 @@ async function handleSubmit() {
 }
 
 async function register() {
+  if (!validateAuthForm("register")) {
+    render();
+    return;
+  }
+
   const payload = {
     email: state.auth.email,
     password: state.auth.password,
@@ -527,6 +568,11 @@ async function register() {
 }
 
 async function login() {
+  if (!validateAuthForm("login")) {
+    render();
+    return;
+  }
+
   await authenticate("/api/auth/login", {
     email: state.auth.email,
     password: state.auth.password,
@@ -537,6 +583,7 @@ async function authenticate(path, body, successMessage) {
   state.auth.isSaving = true;
   state.auth.status = "";
   state.auth.error = "";
+  state.auth.fieldErrors = {};
   render();
 
   try {
@@ -580,9 +627,15 @@ async function loadCurrentUser() {
 }
 
 async function saveProfile() {
+  if (!validateProfileForm()) {
+    render();
+    return;
+  }
+
   state.auth.isSaving = true;
   state.auth.status = "";
   state.auth.error = "";
+  state.auth.fieldErrors = {};
   render();
 
   const payload = {
@@ -630,9 +683,8 @@ function applyAuth(payload) {
 function logout(shouldRender = true) {
   state.authToken = "";
   state.currentUser = null;
-  state.auth.password = "";
-  state.auth.status = "";
-  state.auth.error = "";
+  resetAuthForm();
+  state.activeView = "dashboard";
   state.authChecking = false;
   localStorage.removeItem(AUTH_TOKEN_KEY);
   if (shouldRender) {
@@ -654,6 +706,113 @@ function syncAuthFormFromUser(user) {
 
 function defaultViewForRole(role) {
   return role === "student" ? "chat" : "dashboard";
+}
+
+function resetAuthForm() {
+  state.authMode = "login";
+  state.auth.email = "";
+  state.auth.password = "";
+  state.auth.displayName = "";
+  state.auth.role = "student";
+  state.auth.status = "";
+  state.auth.error = "";
+  state.auth.fieldErrors = {};
+  state.auth.focusField = "";
+  state.auth.isSaving = false;
+  state.auth.studentProfile = {
+    age: "",
+    gender: "other",
+    learnerType: "university",
+  };
+}
+
+function updateAuthField(fieldName, value) {
+  state.auth[fieldName] = value;
+  clearFieldError(fieldName);
+}
+
+function clearFieldError(fieldName) {
+  if (state.auth.fieldErrors[fieldName]) {
+    delete state.auth.fieldErrors[fieldName];
+  }
+}
+
+function appendFieldError(wrap, fieldName) {
+  const message = state.auth.fieldErrors[fieldName];
+  if (message) {
+    wrap.appendChild(el("span", { className: "field-error" }, message));
+  }
+}
+
+function validateAuthForm(mode) {
+  const errors = {};
+  if (!state.auth.email.trim()) {
+    errors.email = "Email is required.";
+  } else if (!isValidEmail(state.auth.email)) {
+    errors.email = "Enter a valid email address.";
+  }
+
+  if (!state.auth.password.trim()) {
+    errors.password = "Password is required.";
+  } else if (mode === "register" && state.auth.password.length < 8) {
+    errors.password = "Password must contain at least 8 characters.";
+  }
+
+  if (mode === "register") {
+    if (!state.auth.displayName.trim()) {
+      errors.displayName = "Display name is required.";
+    }
+    if (!state.auth.role) {
+      errors.role = "Role is required.";
+    }
+    if (state.auth.role === "student") {
+      validateStudentFields(errors);
+    }
+  }
+
+  return applyValidationErrors(errors);
+}
+
+function validateProfileForm() {
+  const errors = {};
+  if (!state.auth.displayName.trim()) {
+    errors.displayName = "Display name is required.";
+  }
+  if (!state.auth.role) {
+    errors.role = "Role is required.";
+  }
+  if (state.auth.role === "student") {
+    validateStudentFields(errors);
+  }
+  return applyValidationErrors(errors);
+}
+
+function validateStudentFields(errors) {
+  const age = Number(state.auth.studentProfile.age);
+  if (String(state.auth.studentProfile.age).trim() === "") {
+    errors.age = "Age is required.";
+  } else if (!Number.isFinite(age) || age < 5 || age > 100) {
+    errors.age = "Age must be between 5 and 100.";
+  }
+  if (!state.auth.studentProfile.gender) {
+    errors.gender = "Gender is required.";
+  }
+  if (!state.auth.studentProfile.learnerType) {
+    errors.learnerType = "Learner type is required.";
+  }
+}
+
+function applyValidationErrors(errors) {
+  state.auth.fieldErrors = errors;
+  state.auth.error = "";
+  state.auth.status = "";
+  const firstField = Object.keys(errors)[0];
+  state.auth.focusField = firstField || "";
+  return !firstField;
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
 function buildStudentProfilePayload() {

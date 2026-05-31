@@ -23,6 +23,9 @@ textarea {
 
 .app-shell {
   min-height: 100vh;
+}
+
+.auth-main-shell {
   padding: 22px;
   background:
     linear-gradient(180deg, rgba(238, 243, 246, 0.9), rgba(238, 243, 246, 0.96)),
@@ -30,7 +33,12 @@ textarea {
       center / cover;
 }
 
-.app-shell:has(.auth-workspace) {
+.app-main-shell {
+  padding: 0;
+  background: #fbfdfe;
+}
+
+.auth-main-shell:has(.auth-workspace) {
   display: grid;
   place-items: center;
 }
@@ -49,8 +57,13 @@ textarea {
 }
 
 .app-workspace {
+  width: 100%;
+  min-height: 100vh;
   grid-template-rows: auto minmax(0, 1fr);
+  border: 0;
+  border-radius: 0;
   background: #ffffff;
+  box-shadow: none;
 }
 
 .auth-workspace {
@@ -247,7 +260,7 @@ textarea {
 }
 
 .dashboard-panel {
-  grid-template-rows: auto 1fr;
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .user-panel {
@@ -470,6 +483,33 @@ textarea {
   color: #17202a;
   background: #fbfdfe;
   outline: none;
+}
+
+.field input::placeholder {
+  color: #8a9aa5;
+}
+
+.field.has-error {
+  color: #84251f;
+}
+
+.field.has-error input,
+.field.has-error select {
+  border-color: #d0473e;
+  background: #fffafa;
+}
+
+.field.has-error input:focus,
+.field.has-error select:focus {
+  border-color: #c43a31;
+  box-shadow: 0 0 0 3px rgba(196, 58, 49, 0.15);
+}
+
+.field-error {
+  color: #b72f27;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
 }
 
 .primary-button {

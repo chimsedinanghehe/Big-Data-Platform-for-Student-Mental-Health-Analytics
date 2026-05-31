@@ -12,15 +12,23 @@ $ErrorActionPreference = "Stop"
 
 $ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $Python = Join-Path $ProjectRoot "venv\Scripts\python.exe"
-$DashboardRoot = Join-Path $ProjectRoot "MentalSchool-Dashboard"
+$DashboardCandidates = @(
+    (Join-Path $ProjectRoot "MentalSchool_Dashboard"),
+    (Join-Path $ProjectRoot "MentalSchool-Dashboard"),
+    (Join-Path $ProjectRoot "mental-school-dashboard")
+)
+$DashboardRoot = $DashboardCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
 
 if (-not (Test-Path $Python)) {
     Write-Host "Missing virtualenv Python: $Python" -ForegroundColor Red
     exit 1
 }
 
-if (-not (Test-Path $DashboardRoot)) {
-    Write-Host "Missing dashboard folder: $DashboardRoot" -ForegroundColor Red
+if (-not $DashboardRoot) {
+    Write-Host "Missing dashboard folder. Checked:" -ForegroundColor Red
+    foreach ($candidate in $DashboardCandidates) {
+        Write-Host "  $candidate" -ForegroundColor Yellow
+    }
     exit 1
 }
 

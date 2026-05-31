@@ -399,7 +399,7 @@ Install dashboard and PostgreSQL client dependencies if needed:
 
 ```powershell
 venv\Scripts\python.exe -m pip install -r requirements.txt
-venv\Scripts\python.exe -m pip install -r MentalSchool-Dashboard\requirements.txt
+venv\Scripts\python.exe -m pip install -r MentalSchool_Dashboard\requirements.txt
 ```
 
 PostgreSQL schema:
