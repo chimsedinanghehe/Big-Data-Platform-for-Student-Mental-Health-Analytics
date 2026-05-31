@@ -35,6 +35,7 @@ DEFAULT_VECTOR_SIZE = 384
 class Settings:
     input_path: str
     embedding_output_path: str | None
+    manifest_output_path: str | None
     qdrant_url: str
     qdrant_api_key: str | None
     collection_name: str
@@ -58,6 +59,11 @@ def parse_args() -> argparse.Namespace:
         "--embedding-output-path",
         default=os.getenv("EMBEDDING_OUTPUT_PATH"),
         help="Optional GCS JSONL file path for embedding artifacts, for example gs://bucket/vector/embeddings/collection/embeddings.jsonl",
+    )
+    parser.add_argument(
+        "--manifest-output-path",
+        default=None,
+        help="Optional GCS JSON manifest path describing this embedding run.",
     )
     parser.add_argument("--qdrant-url", default=os.getenv("QDRANT_URL"))
     parser.add_argument("--qdrant-api-key", default=os.getenv("QDRANT_API_KEY"))
@@ -84,6 +90,7 @@ def main() -> int:
     settings = Settings(
         input_path=args.input_path,
         embedding_output_path=args.embedding_output_path,
+        manifest_output_path=args.manifest_output_path,
         qdrant_url=args.qdrant_url or "",
         qdrant_api_key=args.qdrant_api_key,
         collection_name=args.collection_name,
@@ -205,6 +212,17 @@ def main() -> int:
             upload_file_to_gcs(embedding_jsonl, settings.embedding_output_path)
             logging.info("embedding_records_saved=%s", embedding_record_count)
             logging.info("embedding_output_path=%s", settings.embedding_output_path)
+            if settings.manifest_output_path:
+                manifest_file = Path(temp_dir) / "manifest.json"
+                write_embedding_manifest(
+                    manifest_file,
+                    settings=settings,
+                    embedding_record_count=embedding_record_count,
+                    valid_rows=valid_rows,
+                    upserted=upserted,
+                )
+                upload_file_to_gcs(manifest_file, settings.manifest_output_path)
+                logging.info("manifest_output_path=%s", settings.manifest_output_path)
 
     return 0
 
@@ -419,6 +437,33 @@ def append_embedding_records(
                 "generated_at": generated_at,
             }
             handle.write(json.dumps(json_record, ensure_ascii=False) + "\n")
+
+
+def write_embedding_manifest(
+    output_file: Path,
+    *,
+    settings: Settings,
+    embedding_record_count: int,
+    valid_rows: int,
+    upserted: int,
+) -> None:
+    manifest = {
+        "generated_at": datetime.now(UTC).isoformat(),
+        "input_path": settings.input_path,
+        "embedding_output_path": settings.embedding_output_path,
+        "collection": settings.collection_name,
+        "embedding_model": settings.embedding_model,
+        "vector_size": settings.vector_size,
+        "source_path": settings.source_path,
+        "source_prefix": settings.source_prefix,
+        "source_file": settings.source_file,
+        "embedding_records_saved": embedding_record_count,
+        "valid_chunks_seen": valid_rows,
+        "points_upserted": upserted,
+        "qdrant_upsert": settings.upsert_to_qdrant and not settings.dry_run,
+        "merge_embedding_output": settings.merge_embedding_output,
+    }
+    output_file.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def iter_valid_batches(

@@ -43,6 +43,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dependency-zip", default=None, help="Defaults to gs://<bucket>/jobs/deps/pypdf_deps.zip")
     parser.add_argument("--skip-cluster-create", action="store_true")
     parser.add_argument("--keep-cluster", action="store_true")
+    parser.add_argument("--create-cluster-only", action="store_true", help="Create a warmed Dataproc cluster and exit.")
+    parser.add_argument("--delete-cluster-only", action="store_true", help="Delete the Dataproc cluster and exit.")
     return parser.parse_args()
 
 
@@ -55,6 +57,11 @@ def main() -> int:
     clean_output = versioned_path(f"gs://{args.bucket}/silver/knowledge_base_clean", args.version)
     chunk_output = versioned_path(f"gs://{args.bucket}/gold/rag_chunks", args.version)
     dependency_zip = args.dependency_zip or f"gs://{args.bucket}/jobs/deps/pypdf_deps.zip"
+    gcloud = find_gcloud_executable()
+
+    if args.delete_cluster_only:
+        delete_cluster(args)
+        return 0
 
     print(f"project={args.project}")
     print(f"input_path={input_path}")
@@ -62,27 +69,16 @@ def main() -> int:
     print(f"chunk_output={chunk_output}")
     print(f"dependency_zip={dependency_zip}")
 
-    gcloud = find_gcloud_executable()
     run([gcloud, "storage", "cp", str(pdf_to_silver_path), f"gs://{args.bucket}/scripts/pdf_to_silver.py"])
-    init_action_uri = upload_init_action(args, dependency_zip=dependency_zip, run_id=run_id)
 
     if not args.skip_cluster_create:
-        run(
-            [
-                gcloud,
-                "dataproc",
-                "clusters",
-                "create",
-                args.cluster,
-                f"--project={args.project}",
-                f"--region={args.region}",
-                f"--zone={args.zone}",
-                "--single-node",
-                f"--master-machine-type={args.machine_type}",
-                f"--image-version={args.image_version}",
-                f"--initialization-actions={init_action_uri}",
-            ]
-        )
+        init_action_uri = upload_init_action(args, dependency_zip=dependency_zip, run_id=run_id)
+        create_cluster(args, init_action_uri=init_action_uri)
+
+    if args.create_cluster_only:
+        print("cluster_ready=true")
+        print(f"cluster={args.cluster}")
+        return 0
 
     try:
         with tempfile.TemporaryDirectory(prefix="rag_preprocess_driver_") as temp_dir:
@@ -123,19 +119,66 @@ def main() -> int:
         return 0
     finally:
         if not args.keep_cluster:
-            run(
-                [
-                    find_gcloud_executable(),
-                    "dataproc",
-                    "clusters",
-                    "delete",
-                    args.cluster,
-                    f"--project={args.project}",
-                    f"--region={args.region}",
-                    "--quiet",
-                ],
-                check=False,
-            )
+            delete_cluster(args)
+
+
+def create_cluster(args: argparse.Namespace, *, init_action_uri: str) -> None:
+    if cluster_exists(args):
+        print("cluster_exists=true")
+        print(f"cluster={args.cluster}")
+        return
+
+    gcloud = find_gcloud_executable()
+    run(
+        [
+            gcloud,
+            "dataproc",
+            "clusters",
+            "create",
+            args.cluster,
+            f"--project={args.project}",
+            f"--region={args.region}",
+            f"--zone={args.zone}",
+            "--single-node",
+            f"--master-machine-type={args.machine_type}",
+            f"--image-version={args.image_version}",
+            f"--initialization-actions={init_action_uri}",
+        ]
+    )
+
+
+def delete_cluster(args: argparse.Namespace) -> None:
+    run(
+        [
+            find_gcloud_executable(),
+            "dataproc",
+            "clusters",
+            "delete",
+            args.cluster,
+            f"--project={args.project}",
+            f"--region={args.region}",
+            "--quiet",
+        ],
+        check=False,
+    )
+
+
+def cluster_exists(args: argparse.Namespace) -> bool:
+    result = subprocess.run(
+        [
+            find_gcloud_executable(),
+            "dataproc",
+            "clusters",
+            "describe",
+            args.cluster,
+            f"--project={args.project}",
+            f"--region={args.region}",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    return result.returncode == 0
 
 
 def upload_init_action(args: argparse.Namespace, *, dependency_zip: str, run_id: str) -> str:

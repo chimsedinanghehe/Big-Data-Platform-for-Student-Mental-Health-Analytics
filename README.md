@@ -35,15 +35,28 @@ gs://student-mental-health-lake-nhom1-2026/
     knowledge_base_clean/
       parquet/                              # source of truth for Spark/pipeline jobs
       jsonl/                                # human-readable debug mirror
+      incremental/
+        run=<timestamp>/
+          parquet/                          # append-only incremental clean docs
+          jsonl/
 
   gold/
     rag_chunks/
       parquet/                              # standard input for embedding jobs
       jsonl/                                # human-readable chunk inspection mirror
+      incremental/
+        run=<timestamp>/
+          parquet/                          # append-only incremental chunks
+          jsonl/
 
   vector/
     embeddings/student_mental_health_v1/
-      embeddings.jsonl                      # embedding + payload backup
+      embeddings.jsonl                      # consolidated full-rebuild embedding backup
+      manifest.json
+      incremental/
+        run=<timestamp>/
+          embeddings.jsonl                  # append-only incremental embedding artifact
+          manifest.json
 
   vector_backup/
     qdrant/student_mental_health_v1/
@@ -159,14 +172,14 @@ Options `1` and `2` run:
 
 ```text
 Bronze new file(s)
--> Dataproc append Silver clean docs
--> Dataproc append Gold RAG chunks
--> generate embeddings for the new source path(s) or prefix
--> merge into vector/embeddings/student_mental_health_v1/embeddings.jsonl
--> ask whether to upsert into Qdrant collection student_mental_health_v1
+-> Dataproc append Silver clean docs under silver/knowledge_base_clean/incremental/run=<timestamp>/
+-> Dataproc append Gold RAG chunks under gold/rag_chunks/incremental/run=<timestamp>/
+-> generate embeddings from only that Gold run
+-> write append-only embedding artifact under vector/embeddings/student_mental_health_v1/incremental/run=<timestamp>/
+-> optionally upsert into Qdrant collection student_mental_health_v1 in the same embedding pass
 ```
 
-Answer `y` to the upsert prompt if the chatbot should retrieve from the new documents immediately.
+Answer `y` to the upsert prompt if the chatbot should retrieve from the new documents immediately. Incremental runs do not scan the full Gold folder.
 
 ### Replace, Edit, Or Delete Documents
 
@@ -182,7 +195,7 @@ Option `6` runs:
 Full Bronze folder
 -> overwrite Silver/Gold
 -> regenerate embeddings.jsonl
--> ask whether to upsert rebuilt chunks into Qdrant
+-> optionally upsert rebuilt chunks into Qdrant in the same embedding pass
 ```
 
 Answer `y` to the upsert prompt if collection `student_mental_health_v1` should reflect the rebuilt data.
@@ -202,6 +215,34 @@ Recommended staged order:
 ```text
 3 -> inspect Silver/Gold -> 4 -> inspect embeddings.jsonl -> 5
 ```
+
+### Demo Without Waiting For Cluster Creation
+
+For a presentation, warm the Dataproc cluster before the demo:
+
+```text
+9. Create/warm Dataproc cluster for demo
+```
+
+Then enable warmed-cluster mode if it is not already enabled:
+
+```text
+10. Use warmed Dataproc cluster for this session
+```
+
+When warmed-cluster mode is on, options `1`, `2`, `3`, and `6` pass:
+
+```text
+--skip-cluster-create --keep-cluster
+```
+
+so the pipeline submits jobs to the existing cluster and does not delete it after each run. When the presentation is done, delete it:
+
+```text
+11. Delete Dataproc cluster
+```
+
+This avoids cluster startup time during the demo while still letting you shut it down to avoid idle cost.
 
 ### Back Up Qdrant Before A Large Rebuild
 
@@ -234,7 +275,10 @@ gs://student-mental-health-lake-nhom1-2026/silver/knowledge_base_clean/parquet/
 gs://student-mental-health-lake-nhom1-2026/silver/knowledge_base_clean/jsonl/
 gs://student-mental-health-lake-nhom1-2026/gold/rag_chunks/parquet/
 gs://student-mental-health-lake-nhom1-2026/gold/rag_chunks/jsonl/
+gs://student-mental-health-lake-nhom1-2026/silver/knowledge_base_clean/incremental/run=<timestamp>/parquet/
+gs://student-mental-health-lake-nhom1-2026/gold/rag_chunks/incremental/run=<timestamp>/parquet/
 gs://student-mental-health-lake-nhom1-2026/vector/embeddings/student_mental_health_v1/embeddings.jsonl
+gs://student-mental-health-lake-nhom1-2026/vector/embeddings/student_mental_health_v1/incremental/run=<timestamp>/embeddings.jsonl
 ```
 
 ## Manual Commands
@@ -285,7 +329,7 @@ When adding new documents:
 
 1. Upload the files to `bronze/knowledge_base/`.
 2. Run option `1` for exact file path(s), or option `2` for a dedicated Bronze prefix/folder.
-3. Answer `y` to the upsert prompt if the chatbot should retrieve from the new documents immediately.
+3. Answer `y` to the upsert prompt if the chatbot should retrieve from the new documents immediately. Silver, Gold, and embedding incremental artifacts are written under `incremental/run=<timestamp>`.
 
 When replacing, editing, or deleting existing documents:
 
