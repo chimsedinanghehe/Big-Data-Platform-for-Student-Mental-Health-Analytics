@@ -95,20 +95,18 @@ def ask_rag(request: RAGAskRequest) -> RAGAskResponse:
             detail={"error": "empty_retrieval", "message": "No relevant documents were found for the question."},
         )
 
+    # THAY THẾ ĐOẠN GỌI GCS CŨ BẰNG KAFKA
     try:
-        write_chat_turn(
+        from backend.chat_logs.kafka_publisher import send_chat_turn_to_kafka
+        send_chat_turn_to_kafka(
             session_id=session_id,
             question=question,
             answer=answer,
             is_document_rag=bool(sources),
-            model=settings.openai_model,
-            standalone_query=str(standalone_query) if standalone_query else None,
-            emotion=emotion if isinstance(emotion, dict) else None,
-            safety=safety if isinstance(safety, dict) else None,
-            settings=settings,
+            model="mock-model"
         )
     except Exception as exc:
-        print(f"Chat log upload failed: {exc}")
+        print(f"Kafka error: {exc}")
 
     return RAGAskResponse(
         answer=answer,
