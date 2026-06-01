@@ -37,17 +37,12 @@ class StudentProfilePayload(BaseModel):
         return _validate_optional_choice(value, VALID_LEARNER_TYPES, "learner_type")
 
 
-class ResearcherProfilePayload(BaseModel):
-    pass
-
-
 class RegisterRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=8, max_length=128)
     display_name: str = Field(min_length=1, max_length=120)
-    role: str = "student"
+    role: str = "user"
     student_profile: StudentProfilePayload | None = None
-    researcher_profile: ResearcherProfilePayload | None = None
 
     @validator("email")
     @classmethod
@@ -58,9 +53,9 @@ class RegisterRequest(BaseModel):
     @classmethod
     def validate_role(cls, value: str) -> str:
         normalized = value.strip().lower()
-        if normalized not in VALID_ROLES:
-            raise ValueError("Role must be either student or researcher.")
-        return normalized
+        if normalized in VALID_ROLES or normalized in {"student", "researcher"}:
+            return "user"
+        raise ValueError("Role must be user.")
 
 
 class LoginRequest(BaseModel):
@@ -75,17 +70,16 @@ class LoginRequest(BaseModel):
 
 class ProfileUpdateRequest(BaseModel):
     display_name: str = Field(min_length=1, max_length=120)
-    role: str
+    role: str = "user"
     student_profile: StudentProfilePayload | None = None
-    researcher_profile: ResearcherProfilePayload | None = None
 
     @validator("role")
     @classmethod
     def validate_role(cls, value: str) -> str:
         normalized = value.strip().lower()
-        if normalized not in VALID_ROLES:
-            raise ValueError("Role must be either student or researcher.")
-        return normalized
+        if normalized in VALID_ROLES or normalized in {"student", "researcher"}:
+            return "user"
+        raise ValueError("Role must be user.")
 
 
 class UserResponse(BaseModel):
@@ -108,13 +102,13 @@ class AuthResponse(BaseModel):
 
 @auth_router.post("/register", response_model=AuthResponse)
 def register(request: RegisterRequest) -> AuthResponse:
-    profile = _profile_for_role(request.role, request.student_profile, request.researcher_profile)
+    profile = _profile_for_role(request.student_profile)
     try:
         create_user(
             email=request.email,
             password=request.password,
             display_name=request.display_name,
-            role=request.role,
+            role="user",
             profile=profile,
         )
         auth_result = authenticate_user(email=request.email, password=request.password)
@@ -171,12 +165,12 @@ def save_current_user(
     authorization: str | None = Header(default=None),
 ) -> UserResponse:
     current_user = _require_user(authorization)
-    profile = _profile_for_role(request.role, request.student_profile, request.researcher_profile)
+    profile = _profile_for_role(request.student_profile)
     try:
         updated_user = update_user_profile(
             user_id=current_user.id,
             display_name=request.display_name,
-            role=request.role,
+            role="user",
             profile=profile,
         )
     except ValueError as exc:
@@ -208,14 +202,8 @@ def _require_user(authorization: str | None):
     return user
 
 
-def _profile_for_role(
-    role: str,
-    student_profile: StudentProfilePayload | None,
-    researcher_profile: ResearcherProfilePayload | None,
-) -> dict[str, Any]:
-    if role == "student":
-        return student_profile.dict() if student_profile else {}
-    return {}
+def _profile_for_role(student_profile: StudentProfilePayload | None) -> dict[str, Any]:
+    return student_profile.dict() if student_profile else {}
 
 
 def _auth_response(auth_result) -> AuthResponse:

@@ -379,8 +379,7 @@ Frontend:   http://127.0.0.1:5173
 The frontend is now the shared app shell:
 
 ```text
-Student role    -> Chatbot + Profile
-Researcher role -> Dashboard + Profile
+User role       -> Chatbot + Dashboard + Profile
 Profile/Login   -> PostgreSQL user tables
 ```
 
@@ -413,7 +412,6 @@ Current user tables:
 ```text
 app_users(id, email, password_hash, display_name, role, is_active, created_at, updated_at)
 student_profiles(user_id, age, gender, learner_type)
-researcher_profiles(user_id)
 app_sessions(id, user_id, token_hash, created_at, expires_at)
 ```
 
@@ -426,14 +424,13 @@ GET  /api/auth/me
 PUT  /api/users/me
 ```
 
-Supported roles:
+Supported role:
 
 ```text
-student
-researcher
+user
 ```
 
-After login, navigation is role-based. Student accounts see only Chatbot and Profile. Researcher accounts see only Dashboard and Profile. Student profiles keep only the current research fields used by the app: age, gender, and learner type. Researcher accounts keep only account-level identity and role metadata.
+After login, every account can access Chatbot, Dashboard, and Profile. The profile stores the current fields used by the app: age, gender, and learner type.
 
 Seed demo accounts:
 
@@ -447,7 +444,6 @@ Demo logins:
 ```text
 student.demo@example.com      / StudentDemo123!
 highschool.demo@example.com   / StudentDemo123!
-researcher.demo@example.com   / ResearcherDemo123!
 ```
 
 ## Safety

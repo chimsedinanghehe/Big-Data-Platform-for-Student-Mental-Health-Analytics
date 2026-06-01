@@ -6,7 +6,7 @@ const SESSION_KEY = "student-support-chat-session";
 const AUTH_TOKEN_KEY = "student-platform-auth-token";
 
 const state = {
-  activeView: "dashboard",
+  activeView: "chat",
   authMode: "login",
   authChecking: false,
   authToken: "",
@@ -27,7 +27,7 @@ const state = {
     email: "",
     password: "",
     displayName: "",
-    role: "student",
+    role: "user",
     status: "",
     error: "",
     fieldErrors: {},
@@ -114,7 +114,7 @@ function renderAuthWorkspace() {
 function renderWorkspace() {
   normalizeActiveView();
 
-  const workspace = el("section", { className: `workspace app-workspace role-${state.currentUser.role}` });
+  const workspace = el("section", { className: "workspace app-workspace role-user" });
   workspace.appendChild(renderTopBar());
 
   const body = el("div", { className: "app-body" });
@@ -131,11 +131,11 @@ function renderTopBar() {
   const header = el("header", { className: "topbar" });
   const titleWrap = el("div");
   titleWrap.appendChild(el("h1", {}, "Student Mental Health Platform"));
-  titleWrap.appendChild(el("p", {}, state.currentUser.role === "student" ? "Chatbot and account profile." : "Analytics dashboard and account profile."));
+  titleWrap.appendChild(el("p", {}, "Chatbot, analytics dashboard, and account profile."));
   header.appendChild(titleWrap);
 
   const right = el("div", { className: "header-actions" });
-  right.appendChild(el("div", { className: "account-chip" }, `${state.currentUser.display_name} | ${state.currentUser.role}`));
+  right.appendChild(el("div", { className: "account-chip" }, state.currentUser.display_name));
   const logoutButton = el("button", { type: "button", className: "secondary-button" }, "Logout");
   logoutButton.addEventListener("click", logout);
   right.appendChild(logoutButton);
@@ -173,13 +173,8 @@ function renderSideNavItem(view, label) {
 }
 
 function getNavItems() {
-  if (state.currentUser.role === "student") {
-    return [
-      { view: "chat", label: "Chatbot" },
-      { view: "profile", label: "Profile" },
-    ];
-  }
   return [
+    { view: "chat", label: "Chatbot" },
     { view: "dashboard", label: "Dashboard" },
     { view: "profile", label: "Profile" },
   ];
@@ -225,10 +220,7 @@ function renderAuth() {
     form.appendChild(renderInput("Display name", "text", state.auth.displayName, "displayName", "Name shown in the app", (value) => {
       updateAuthField("displayName", value);
     }));
-    form.appendChild(renderRoleField());
-    if (state.auth.role === "student") {
-      appendStudentFields(form);
-    }
+    appendStudentFields(form);
   }
 
   const buttonText = state.auth.isSaving ? "Working..." : state.authMode === "login" ? "Login" : "Register";
@@ -310,10 +302,7 @@ function renderProfile() {
   form.appendChild(renderInput("Display name", "text", state.auth.displayName, "displayName", "Name shown in the app", (value) => {
     updateAuthField("displayName", value);
   }));
-  form.appendChild(renderRoleField());
-  if (state.auth.role === "student") {
-    appendStudentFields(form);
-  }
+  appendStudentFields(form);
 
   const button = el("button", { type: "submit", className: "primary-button" }, state.auth.isSaving ? "Saving..." : "Save profile");
   button.disabled = state.auth.isSaving;
@@ -326,30 +315,6 @@ function renderProfile() {
   panel.appendChild(form);
   appendStatus(panel);
   return panel;
-}
-
-function renderRoleField() {
-  const error = state.auth.fieldErrors.role;
-  const wrap = el("label", { className: error ? "field has-error" : "field" });
-  wrap.appendChild(el("span", {}, "Role"));
-  const select = el("select", { "data-field": "role" });
-  for (const [value, label] of [["student", "Student"], ["researcher", "Researcher"]]) {
-    const option = el("option", { value }, label);
-    if (state.auth.role === value) {
-      option.selected = true;
-    }
-    select.appendChild(option);
-  }
-  select.addEventListener("change", (event) => {
-    state.auth.role = event.target.value;
-    clearFieldError("role");
-    state.auth.fieldErrors = {};
-    state.auth.focusField = "";
-    render();
-  });
-  wrap.appendChild(select);
-  appendFieldError(wrap, "role");
-  return wrap;
 }
 
 function appendStudentFields(form) {
@@ -557,13 +522,9 @@ async function register() {
     email: state.auth.email,
     password: state.auth.password,
     display_name: state.auth.displayName,
-    role: state.auth.role,
+    role: "user",
+    student_profile: buildStudentProfilePayload(),
   };
-  if (state.auth.role === "student") {
-    payload.student_profile = buildStudentProfilePayload();
-  } else {
-    payload.researcher_profile = {};
-  }
   await authenticate("/api/auth/register", payload, "Registration complete.");
 }
 
@@ -598,7 +559,7 @@ async function authenticate(path, body, successMessage) {
     }
     applyAuth(payload);
     state.auth.status = successMessage;
-    state.activeView = defaultViewForRole(payload.user.role);
+    state.activeView = defaultView();
   } catch (error) {
     state.auth.error = error instanceof Error ? error.message : "Authentication failed.";
   } finally {
@@ -640,13 +601,9 @@ async function saveProfile() {
 
   const payload = {
     display_name: state.auth.displayName,
-    role: state.auth.role,
+    role: "user",
+    student_profile: buildStudentProfilePayload(),
   };
-  if (state.auth.role === "student") {
-    payload.student_profile = buildStudentProfilePayload();
-  } else {
-    payload.researcher_profile = {};
-  }
 
   try {
     const response = await fetch(`${API_BASE_URL}/api/users/me`, {
@@ -684,7 +641,7 @@ function logout(shouldRender = true) {
   state.authToken = "";
   state.currentUser = null;
   resetAuthForm();
-  state.activeView = "dashboard";
+  state.activeView = "chat";
   state.authChecking = false;
   localStorage.removeItem(AUTH_TOKEN_KEY);
   if (shouldRender) {
@@ -695,7 +652,7 @@ function logout(shouldRender = true) {
 function syncAuthFormFromUser(user) {
   state.auth.email = user.email || "";
   state.auth.displayName = user.display_name || "";
-  state.auth.role = user.role || "student";
+  state.auth.role = "user";
   const profile = user.profile || {};
   state.auth.studentProfile = {
     age: profile.age ?? "",
@@ -704,8 +661,8 @@ function syncAuthFormFromUser(user) {
   };
 }
 
-function defaultViewForRole(role) {
-  return role === "student" ? "chat" : "dashboard";
+function defaultView() {
+  return "chat";
 }
 
 function resetAuthForm() {
@@ -713,7 +670,7 @@ function resetAuthForm() {
   state.auth.email = "";
   state.auth.password = "";
   state.auth.displayName = "";
-  state.auth.role = "student";
+  state.auth.role = "user";
   state.auth.status = "";
   state.auth.error = "";
   state.auth.fieldErrors = {};
@@ -762,12 +719,7 @@ function validateAuthForm(mode) {
     if (!state.auth.displayName.trim()) {
       errors.displayName = "Display name is required.";
     }
-    if (!state.auth.role) {
-      errors.role = "Role is required.";
-    }
-    if (state.auth.role === "student") {
-      validateStudentFields(errors);
-    }
+    validateStudentFields(errors);
   }
 
   return applyValidationErrors(errors);
@@ -778,12 +730,7 @@ function validateProfileForm() {
   if (!state.auth.displayName.trim()) {
     errors.displayName = "Display name is required.";
   }
-  if (!state.auth.role) {
-    errors.role = "Role is required.";
-  }
-  if (state.auth.role === "student") {
-    validateStudentFields(errors);
-  }
+  validateStudentFields(errors);
   return applyValidationErrors(errors);
 }
 

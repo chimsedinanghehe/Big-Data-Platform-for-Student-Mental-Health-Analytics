@@ -3,15 +3,19 @@ CREATE TABLE IF NOT EXISTS app_users (
     email TEXT NOT NULL UNIQUE,
     password_hash TEXT,
     display_name TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'student',
+    role TEXT NOT NULL DEFAULT 'user',
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT app_users_role_check CHECK (role IN ('student', 'researcher'))
+    CONSTRAINT app_users_role_check CHECK (role = 'user')
 );
 
 ALTER TABLE app_users ADD COLUMN IF NOT EXISTS password_hash TEXT;
 ALTER TABLE app_users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE app_users DROP CONSTRAINT IF EXISTS app_users_role_check;
+ALTER TABLE app_users ALTER COLUMN role SET DEFAULT 'user';
+UPDATE app_users SET role = 'user' WHERE role <> 'user';
+ALTER TABLE app_users ADD CONSTRAINT app_users_role_check CHECK (role = 'user');
 
 CREATE INDEX IF NOT EXISTS idx_app_users_role ON app_users(role);
 
@@ -34,12 +38,6 @@ CREATE TABLE IF NOT EXISTS student_profiles (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS researcher_profiles (
-    user_id UUID PRIMARY KEY REFERENCES app_users(id) ON DELETE CASCADE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
 ALTER TABLE student_profiles DROP COLUMN IF EXISTS institution_name;
 ALTER TABLE student_profiles DROP COLUMN IF EXISTS grade_or_year;
 ALTER TABLE student_profiles DROP COLUMN IF EXISTS field_of_study;
@@ -47,9 +45,6 @@ ALTER TABLE student_profiles DROP COLUMN IF EXISTS region;
 ALTER TABLE student_profiles DROP COLUMN IF EXISTS stress_level;
 ALTER TABLE student_profiles DROP COLUMN IF EXISTS sleep_hours;
 ALTER TABLE student_profiles DROP COLUMN IF EXISTS consent_for_research;
-ALTER TABLE researcher_profiles DROP COLUMN IF EXISTS organization;
-ALTER TABLE researcher_profiles DROP COLUMN IF EXISTS position_title;
-ALTER TABLE researcher_profiles DROP COLUMN IF EXISTS research_area;
 
 CREATE TABLE IF NOT EXISTS app_sessions (
     id UUID PRIMARY KEY,

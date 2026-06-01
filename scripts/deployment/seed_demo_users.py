@@ -23,7 +23,7 @@ DEMO_USERS = [
         "email": "student.demo@example.com",
         "password": "StudentDemo123!",
         "display_name": "Student Demo",
-        "role": "student",
+        "role": "user",
         "profile": {
             "age": 20,
             "gender": "female",
@@ -34,19 +34,12 @@ DEMO_USERS = [
         "email": "highschool.demo@example.com",
         "password": "StudentDemo123!",
         "display_name": "High School Demo",
-        "role": "student",
+        "role": "user",
         "profile": {
             "age": 16,
             "gender": "other",
             "learner_type": "high_school",
         },
-    },
-    {
-        "email": "researcher.demo@example.com",
-        "password": "ResearcherDemo123!",
-        "display_name": "Researcher Demo",
-        "role": "researcher",
-        "profile": {},
     },
 ]
 

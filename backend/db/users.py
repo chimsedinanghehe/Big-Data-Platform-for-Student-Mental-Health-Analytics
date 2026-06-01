@@ -11,7 +11,8 @@ from uuid import UUID, uuid4
 from backend.db.connection import connect
 
 
-VALID_ROLES = {"student", "researcher"}
+VALID_ROLES = {"user"}
+LEGACY_ROLES = {"student", "researcher"}
 VALID_GENDERS = {"male", "female", "other"}
 VALID_LEARNER_TYPES = {
     "elementary",
@@ -277,49 +278,36 @@ def normalize_email(email: str) -> str:
 
 def normalize_role(role: str) -> str:
     normalized = role.strip().lower()
-    if normalized not in VALID_ROLES:
-        raise ValueError("Role must be either student or researcher.")
-    return normalized
+    if normalized in VALID_ROLES or normalized in LEGACY_ROLES:
+        return "user"
+    raise ValueError("Role must be user.")
 
 
 def _upsert_profile(cursor: object, user_id: UUID, role: str, profile: dict) -> None:
-    if role == "student":
-        gender = _optional_choice(profile.get("gender"), VALID_GENDERS, "gender")
-        learner_type = _optional_choice(profile.get("learner_type"), VALID_LEARNER_TYPES, "learner_type")
-        cursor.execute("DELETE FROM researcher_profiles WHERE user_id = %s", (user_id,))
-        cursor.execute(
-            """
-            INSERT INTO student_profiles (user_id, age, gender, learner_type)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (user_id)
-            DO UPDATE SET
-                age = EXCLUDED.age,
-                gender = EXCLUDED.gender,
-                learner_type = EXCLUDED.learner_type,
-                updated_at = NOW()
-            """,
-            (
-                user_id,
-                _optional_int(profile.get("age")),
-                gender,
-                learner_type,
-            ),
-        )
-    else:
-        cursor.execute("DELETE FROM student_profiles WHERE user_id = %s", (user_id,))
-        cursor.execute(
-            """
-            INSERT INTO researcher_profiles (user_id)
-            VALUES (%s)
-            ON CONFLICT (user_id)
-            DO UPDATE SET updated_at = NOW()
-            """,
-            (user_id,),
-        )
+    gender = _optional_choice(profile.get("gender"), VALID_GENDERS, "gender")
+    learner_type = _optional_choice(profile.get("learner_type"), VALID_LEARNER_TYPES, "learner_type")
+    cursor.execute(
+        """
+        INSERT INTO student_profiles (user_id, age, gender, learner_type)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (user_id)
+        DO UPDATE SET
+            age = EXCLUDED.age,
+            gender = EXCLUDED.gender,
+            learner_type = EXCLUDED.learner_type,
+            updated_at = NOW()
+        """,
+        (
+            user_id,
+            _optional_int(profile.get("age")),
+            gender,
+            learner_type,
+        ),
+    )
 
 
 def _get_profile(cursor: object, user_id: UUID, role: str) -> dict:
-    if role == "student":
+    if role == "user":
         cursor.execute(
             """
             SELECT age, gender, learner_type
