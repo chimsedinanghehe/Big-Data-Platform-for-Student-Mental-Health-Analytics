@@ -21,7 +21,7 @@ CREATE INDEX IF NOT EXISTS idx_app_users_role ON app_users(role);
 
 CREATE TABLE IF NOT EXISTS student_profiles (
     user_id UUID PRIMARY KEY REFERENCES app_users(id) ON DELETE CASCADE,
-    age INTEGER CHECK (age IS NULL OR age BETWEEN 5 AND 100),
+    birthday DATE,
     gender TEXT CHECK (gender IS NULL OR gender IN ('male', 'female', 'other')),
     learner_type TEXT CHECK (
         learner_type IS NULL OR learner_type IN (
@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS student_profiles (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE student_profiles ADD COLUMN IF NOT EXISTS birthday DATE;
+ALTER TABLE student_profiles DROP COLUMN IF EXISTS age;
 ALTER TABLE student_profiles DROP COLUMN IF EXISTS institution_name;
 ALTER TABLE student_profiles DROP COLUMN IF EXISTS grade_or_year;
 ALTER TABLE student_profiles DROP COLUMN IF EXISTS field_of_study;

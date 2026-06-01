@@ -34,7 +34,7 @@ const state = {
     focusField: "",
     isSaving: false,
     studentProfile: {
-      age: "",
+      birthday: "",
       gender: "other",
       learnerType: "university",
     },
@@ -217,7 +217,7 @@ function renderAuth() {
   }));
 
   if (state.authMode === "register") {
-    form.appendChild(renderInput("Display name", "text", state.auth.displayName, "displayName", "Name shown in the app", (value) => {
+    form.appendChild(renderInput("Name", "text", state.auth.displayName, "displayName", "Name shown in the app", (value) => {
       updateAuthField("displayName", value);
     }));
     appendStudentFields(form);
@@ -299,7 +299,7 @@ function renderProfile() {
 
   const form = el("form", { className: "user-form wide" });
   form.appendChild(renderReadonlyField("Email", state.currentUser.email));
-  form.appendChild(renderInput("Display name", "text", state.auth.displayName, "displayName", "Name shown in the app", (value) => {
+  form.appendChild(renderInput("Name", "text", state.auth.displayName, "displayName", "Name shown in the app", (value) => {
     updateAuthField("displayName", value);
   }));
   appendStudentFields(form);
@@ -318,9 +318,9 @@ function renderProfile() {
 }
 
 function appendStudentFields(form) {
-  form.appendChild(renderInput("Age", "number", state.auth.studentProfile.age, "age", "e.g. 20", (value) => {
-    state.auth.studentProfile.age = value;
-    clearFieldError("age");
+  form.appendChild(renderInput("Birthday", "date", state.auth.studentProfile.birthday, "birthday", "YYYY-MM-DD", (value) => {
+    state.auth.studentProfile.birthday = value;
+    clearFieldError("birthday");
   }));
   form.appendChild(renderSelect("Gender", state.auth.studentProfile.gender, [
     ["male", "Male"],
@@ -655,7 +655,7 @@ function syncAuthFormFromUser(user) {
   state.auth.role = "user";
   const profile = user.profile || {};
   state.auth.studentProfile = {
-    age: profile.age ?? "",
+    birthday: profile.birthday ?? "",
     gender: profile.gender || "other",
     learnerType: profile.learner_type || "university",
   };
@@ -677,7 +677,7 @@ function resetAuthForm() {
   state.auth.focusField = "";
   state.auth.isSaving = false;
   state.auth.studentProfile = {
-    age: "",
+    birthday: "",
     gender: "other",
     learnerType: "university",
   };
@@ -735,11 +735,14 @@ function validateProfileForm() {
 }
 
 function validateStudentFields(errors) {
-  const age = Number(state.auth.studentProfile.age);
-  if (String(state.auth.studentProfile.age).trim() === "") {
-    errors.age = "Age is required.";
-  } else if (!Number.isFinite(age) || age < 5 || age > 100) {
-    errors.age = "Age must be between 5 and 100.";
+  const birthday = String(state.auth.studentProfile.birthday || "").trim();
+  const age = calculateAge(birthday);
+  if (!birthday) {
+    errors.birthday = "Birthday is required.";
+  } else if (age === null) {
+    errors.birthday = "Enter a valid birthday.";
+  } else if (age < 5 || age > 100) {
+    errors.birthday = "Birthday must make age between 5 and 100.";
   }
   if (!state.auth.studentProfile.gender) {
     errors.gender = "Gender is required.";
@@ -764,7 +767,7 @@ function isValidEmail(value) {
 
 function buildStudentProfilePayload() {
   return {
-    age: optionalNumber(state.auth.studentProfile.age),
+    birthday: optionalDate(state.auth.studentProfile.birthday),
     gender: state.auth.studentProfile.gender,
     learner_type: state.auth.studentProfile.learnerType,
   };
@@ -776,11 +779,37 @@ function authHeaders() {
   };
 }
 
-function optionalNumber(value) {
+function optionalDate(value) {
   if (value === null || value === undefined || String(value).trim() === "") {
     return null;
   }
-  return Number(value);
+  return String(value).trim();
+}
+
+function calculateAge(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return null;
+  }
+  const [year, month, day] = value.split("-").map(Number);
+  const birthday = new Date(year, month - 1, day);
+  if (
+    Number.isNaN(birthday.getTime()) ||
+    birthday.getFullYear() !== year ||
+    birthday.getMonth() !== month - 1 ||
+    birthday.getDate() !== day
+  ) {
+    return null;
+  }
+
+  const today = new Date();
+  let age = today.getFullYear() - birthday.getFullYear();
+  const hasHadBirthdayThisYear =
+    today.getMonth() > birthday.getMonth() ||
+    (today.getMonth() === birthday.getMonth() && today.getDate() >= birthday.getDate());
+  if (!hasHadBirthdayThisYear) {
+    age -= 1;
+  }
+  return age;
 }
 
 function el(tagName, attributes = {}, text = "") {

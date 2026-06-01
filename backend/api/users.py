@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, status
@@ -22,9 +22,20 @@ users_router = APIRouter(prefix="/api/users", tags=["users"])
 
 
 class StudentProfilePayload(BaseModel):
-    age: int | None = Field(default=None, ge=5, le=100)
+    birthday: date | None = None
     gender: str | None = None
     learner_type: str | None = None
+
+    @validator("birthday")
+    @classmethod
+    def validate_birthday(cls, value: date | None) -> date | None:
+        if value is None:
+            return None
+        today = date.today()
+        age = today.year - value.year - ((today.month, today.day) < (value.month, value.day))
+        if age < 5 or age > 100:
+            raise ValueError("Birthday must make age between 5 and 100.")
+        return value
 
     @validator("gender")
     @classmethod
@@ -203,7 +214,11 @@ def _require_user(authorization: str | None):
 
 
 def _profile_for_role(student_profile: StudentProfilePayload | None) -> dict[str, Any]:
-    return student_profile.dict() if student_profile else {}
+    if not student_profile:
+        return {}
+    if hasattr(student_profile, "model_dump"):
+        return student_profile.model_dump()
+    return student_profile.dict()
 
 
 def _auth_response(auth_result) -> AuthResponse:

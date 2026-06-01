@@ -5119,16 +5119,32 @@ def inject_board_css() -> None:
         """
         <style>
         [data-testid="stSegmentedControl"] {
-            margin: 0 0 0.75rem;
+            position: fixed;
+            top: 0.58rem;
+            left: 1.75rem;
+            z-index: 1002;
+            width: auto;
+            max-width: calc(100vw - 14rem);
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+        [data-testid="stSegmentedControl"]::-webkit-scrollbar {
+            display: none;
         }
         [data-testid="stSegmentedControl"] button {
-            min-height: 2.8rem;
+            min-height: 2.9rem;
             min-width: 10.5rem;
+            padding: 0.55rem 1.15rem;
             border: 1px solid #d9e2ec;
             border-radius: 8px !important;
             background: #ffffff;
             color: #344453;
             font-weight: 700;
+            font-size: 1rem;
+            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08);
         }
         [data-testid="stSegmentedControl"] button[aria-pressed="true"] {
             border-color: #2f9dd8;
@@ -6762,4 +6778,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

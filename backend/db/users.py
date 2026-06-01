@@ -5,7 +5,7 @@ import hashlib
 import hmac
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 from backend.db.connection import connect
@@ -284,22 +284,23 @@ def normalize_role(role: str) -> str:
 
 
 def _upsert_profile(cursor: object, user_id: UUID, role: str, profile: dict) -> None:
+    birthday = _optional_date(profile.get("birthday"))
     gender = _optional_choice(profile.get("gender"), VALID_GENDERS, "gender")
     learner_type = _optional_choice(profile.get("learner_type"), VALID_LEARNER_TYPES, "learner_type")
     cursor.execute(
         """
-        INSERT INTO student_profiles (user_id, age, gender, learner_type)
+        INSERT INTO student_profiles (user_id, birthday, gender, learner_type)
         VALUES (%s, %s, %s, %s)
         ON CONFLICT (user_id)
         DO UPDATE SET
-            age = EXCLUDED.age,
+            birthday = EXCLUDED.birthday,
             gender = EXCLUDED.gender,
             learner_type = EXCLUDED.learner_type,
             updated_at = NOW()
         """,
         (
             user_id,
-            _optional_int(profile.get("age")),
+            birthday,
             gender,
             learner_type,
         ),
@@ -310,7 +311,7 @@ def _get_profile(cursor: object, user_id: UUID, role: str) -> dict:
     if role == "user":
         cursor.execute(
             """
-            SELECT age, gender, learner_type
+            SELECT birthday, gender, learner_type
             FROM student_profiles
             WHERE user_id = %s
             """,
@@ -344,10 +345,12 @@ def _optional_text(value: object) -> str | None:
     return normalized or None
 
 
-def _optional_int(value: object) -> int | None:
+def _optional_date(value: object) -> date | None:
     if value in {None, ""}:
         return None
-    return int(value)
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value))
 
 
 def _optional_choice(value: object, allowed: set[str], field_name: str) -> str | None:
