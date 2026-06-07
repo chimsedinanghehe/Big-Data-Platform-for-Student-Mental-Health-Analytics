@@ -438,18 +438,23 @@ After login, navigation is role-based. Student accounts see only Chatbot and Pro
 Seed demo accounts:
 
 ```powershell
-$env:DATABASE_URL="postgresql://student_app:student_app_password@127.0.0.1:5433/student_mental_health_app"
+$env:DATABASE_URL="<postgresql-connection-string>"
+$env:DEMO_STUDENT_PASSWORD="<temporary-demo-password>"
+$env:DEMO_RESEARCHER_PASSWORD="<temporary-demo-password>"
 venv\Scripts\python.exe scripts\deployment\seed_demo_users.py
 ```
 
-Demo logins:
-
-```text
-student.demo@example.com      / StudentDemo123!
-highschool.demo@example.com   / StudentDemo123!
-researcher.demo@example.com   / ResearcherDemo123!
-```
+Demo users, when required outside production, must be created with
+`scripts/deployment/seed_demo_users.py`. Do not store demo or production
+passwords in repository documentation.
 
 ## Safety
 
 This project is not a medical diagnosis system. The chatbot should provide supportive information, protect user privacy, and direct users to professional or emergency support when needed.
+# Production deployment
+
+The production-ready deployment template is under [`deploy/`](deploy/README.md).
+When the domain and host are ready, fill
+[`deploy/DEPLOYMENT_INPUT_FORM.md`](deploy/DEPLOYMENT_INPUT_FORM.md), create
+`deploy/.env.production` from the provided example, and run the preflight before
+deployment. Secrets and runtime artifacts are excluded from Git.

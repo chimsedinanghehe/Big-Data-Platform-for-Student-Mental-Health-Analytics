@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, status
@@ -23,6 +23,7 @@ users_router = APIRouter(prefix="/api/users", tags=["users"])
 
 class StudentProfilePayload(BaseModel):
     age: int | None = Field(default=None, ge=5, le=100)
+    birth_date: date | None = None
     gender: str | None = None
     learner_type: str | None = None
 

@@ -48,10 +48,6 @@ if (-not $hasOpenAIKey) {
 
 Set-Location $ProjectRoot
 
-if (-not $env:DATABASE_URL) {
-    $env:DATABASE_URL = "postgresql://student_app:student_app_password@127.0.0.1:5433/student_mental_health_app"
-}
-
 $existingBackend = $null
 try {
     $existingBackend = Invoke-RestMethod -Uri "http://127.0.0.1:8000/health" -TimeoutSec 2
@@ -76,7 +72,7 @@ if ($portOwner) {
 
 Write-Host "Starting FastAPI backend..." -ForegroundColor Cyan
 Write-Host "Health check: http://127.0.0.1:8000/health"
-Write-Host "User database: PostgreSQL on 127.0.0.1:5433"
+Write-Host "User database: DATABASE_URL from .env/backend\.env/environment"
 Write-Host "Stop with Ctrl+C"
 
 & $Python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000

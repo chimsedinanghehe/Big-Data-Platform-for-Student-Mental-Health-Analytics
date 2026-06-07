@@ -1,10 +1,12 @@
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Header, HTTPException, status
 from qdrant_client.http.exceptions import ApiException, ResponseHandlingException, UnexpectedResponse
 
 from backend.api.schemas import ErrorResponse, RAGAskRequest, RAGAskResponse
-from backend.chat_logs.gcs_writer import write_chat_turn
+from backend.db.chat_sessions import upsert_chat_session_user_mapping
+from backend.db.surveys import get_chat_profile_context, get_survey_status
+from backend.db.users import get_user_by_token
 from backend.rag.config import get_settings
 from backend.rag.service import answer_question
 
@@ -23,7 +25,7 @@ router = APIRouter(prefix="/api/rag", tags=["rag"])
         503: {"model": ErrorResponse},
     },
 )
-def ask_rag(request: RAGAskRequest) -> RAGAskResponse:
+def ask_rag(request: RAGAskRequest, authorization: str | None = Header(default=None)) -> RAGAskResponse:
     question = (request.question or "").strip()
     if not question:
         raise HTTPException(
@@ -32,6 +34,23 @@ def ask_rag(request: RAGAskRequest) -> RAGAskResponse:
         )
 
     session_id = (request.session_id or str(uuid4())).strip()
+    current_user = _optional_user(authorization)
+    survey_status = None
+    profile_context = {}
+    if current_user is not None:
+        user_profile = current_user.profile or {}
+        try:
+            upsert_chat_session_user_mapping(
+                session_id=session_id,
+                user_id=current_user.id,
+                age=user_profile.get("age"),
+                gender=user_profile.get("gender"),
+                learner_type=user_profile.get("learner_type"),
+            )
+            survey_status = get_survey_status(user_id=current_user.id, role=current_user.role)
+            profile_context = get_chat_profile_context(user_id=current_user.id)
+        except Exception as exc:
+            print(f"Chat user mapping error: {exc}")
     chat_history = [
         {"role": message.role, "content": message.content}
         for message in request.chat_history
@@ -103,7 +122,16 @@ def ask_rag(request: RAGAskRequest) -> RAGAskResponse:
             question=question,
             answer=answer,
             is_document_rag=bool(sources),
-            model="mock-model"
+            model="mock-model",
+            user_id=current_user.id if current_user else None,
+            user_age=profile_context.get("age") if profile_context else ((current_user.profile or {}).get("age") if current_user else None),
+            user_gender=profile_context.get("gender") if profile_context else ((current_user.profile or {}).get("gender") if current_user else None),
+            learner_type=profile_context.get("learner_type") if profile_context else ((current_user.profile or {}).get("learner_type") if current_user else None),
+            grade=profile_context.get("grade") if profile_context else None,
+            class_level=profile_context.get("class_level") if profile_context else None,
+            user_group=profile_context.get("survey_type") if profile_context else (survey_status.survey_type if survey_status else None),
+            survey_type=profile_context.get("survey_type") if profile_context else (survey_status.survey_type if survey_status else None),
+            survey_completed=bool(profile_context.get("survey_completed")) if profile_context else (survey_status.survey_completed if survey_status else None),
         )
     except Exception as exc:
         print(f"Kafka error: {exc}")
@@ -112,6 +140,15 @@ def ask_rag(request: RAGAskRequest) -> RAGAskResponse:
         answer=answer,
         session_id=session_id,
     )
+
+
+def _optional_user(authorization: str | None):
+    if not authorization or not authorization.lower().startswith("bearer "):
+        return None
+    token = authorization.split(" ", maxsplit=1)[1].strip()
+    if not token:
+        return None
+    return get_user_by_token(token)
 
 
 def _split_answer_sources(raw_answer: str) -> tuple[str, list[str]]:

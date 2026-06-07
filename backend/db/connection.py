@@ -28,6 +28,14 @@ def require_database_url() -> str:
     return database_url
 
 
+def database_connect_timeout_seconds() -> int:
+    value = os.getenv("DATABASE_CONNECT_TIMEOUT_SECONDS", "10")
+    try:
+        return max(1, int(value))
+    except ValueError:
+        return 10
+
+
 @contextmanager
 def connect() -> Iterator[object]:
     try:
@@ -36,7 +44,11 @@ def connect() -> Iterator[object]:
     except ImportError as exc:
         raise RuntimeError("Missing PostgreSQL dependency. Run: venv\\Scripts\\python.exe -m pip install -r requirements.txt") from exc
 
-    with psycopg.connect(require_database_url(), row_factory=dict_row) as connection:
+    with psycopg.connect(
+        require_database_url(),
+        row_factory=dict_row,
+        connect_timeout=database_connect_timeout_seconds(),
+    ) as connection:
         yield connection
 
 
@@ -50,4 +62,3 @@ def initialize_schema_if_configured() -> None:
         with connection.cursor() as cursor:
             cursor.execute(schema_sql)
         connection.commit()
-

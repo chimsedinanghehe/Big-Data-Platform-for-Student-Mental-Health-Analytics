@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import html
 import hashlib
+import json
+import os
 
 import numpy as np
 import pandas as pd
@@ -57,8 +59,8 @@ DEFAULT_HMS_PATHS = [
     Path("data/HMS_2024-2025_PUBLIC_instchars.csv"),
 ]
 LOCAL_CACHE_DIR = Path("data/.dashboard_cache")
-GCS_PROJECT_ID = "student-mental-health-496205"
-GCS_BUCKET_NAME = "student-mental-health-lake-nhom1-2026"
+GCS_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "student-mental-health-496205")
+GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "student-mental-health-lake-nhom1-2026")
 GOLD_SURVEY_FEATURE_PREFIX = "gold/dashboard_tables/survey_analytic_features/"
 GOLD_SURVEY_TABLE_PREFIXES = {
     "survey_overview_summary": "gold/dashboard_tables/survey_overview_summary/",
@@ -68,6 +70,8 @@ GOLD_SURVEY_TABLE_PREFIXES = {
     "survey_numeric_summary": "gold/dashboard_tables/survey_numeric_summary/",
     "survey_analytic_features": GOLD_SURVEY_FEATURE_PREFIX,
 }
+REQUIRED_GOLD_SURVEY_TABLES = {"survey_analytic_features"}
+GOLD_SURVEY_CURRENT_MANIFEST = "gold/dashboard_tables/_manifests/survey_current.json"
 
 
 def create_gcs_storage_client():
@@ -133,7 +137,6 @@ BOARD_NAV_PAGES = {
     "Tổng quan": "Toàn bộ mẫu và các nhóm yếu tố có thể so sánh chung",
     "Học sinh": "Cụm khảo sát chi tiết riêng của học sinh",
     "Sinh viên": "Cụm khảo sát chi tiết riêng của sinh viên",
-    "Chat logs": "Phân tích hội thoại chatbot",
 }
 
 RISK_LABELS = {
@@ -1034,6 +1037,31 @@ def inject_css() -> None:
             border: 1px solid var(--border) !important;
             border-radius: 4px !important;
             box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06) !important;
+            transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+        }}
+
+        .kpi-card:hover,
+        .soft-box:hover,
+        div[data-testid="stMetric"]:hover,
+        [data-testid="stDataFrame"]:hover {{
+            transform: translateY(-1px);
+            border-color: #B8CDD9 !important;
+            box-shadow: 0 8px 22px rgba(16, 24, 40, 0.09) !important;
+        }}
+
+        .block-container > div {{
+            animation: dashboardFadeIn 220ms ease both;
+        }}
+
+        @keyframes dashboardFadeIn {{
+            from {{
+                opacity: 0;
+                transform: translateY(4px);
+            }}
+            to {{
+                opacity: 1;
+                transform: translateY(0);
+            }}
         }}
 
         .hero {{
@@ -1705,6 +1733,12 @@ def processed_cache_path(signature: str, pipeline_version: str) -> Path:
     return LOCAL_CACHE_DIR / f"board_processed_{token}.pkl"
 
 
+def gold_survey_cache_path(manifest: Tuple[Tuple[str, str, int, int], ...]) -> Path:
+    signature = json.dumps(manifest, ensure_ascii=True, sort_keys=True)
+    token = hashlib.sha256(f"{PIPELINE_VERSION}::gold::{signature}".encode("utf-8")).hexdigest()[:24]
+    return LOCAL_CACHE_DIR / f"gold_survey_{token}.pkl"
+
+
 @st.cache_resource(show_spinner="Đang nạp dữ liệu dashboard...")
 def load_default_prepared_data(
     default_path: Optional[str],
@@ -1762,6 +1796,26 @@ def blob_partition_value(blob_name: str, key: str) -> str:
 def survey_gold_tables_manifest() -> Tuple[Tuple[Tuple[str, str, int, int], ...], str]:
     try:
         client = create_gcs_storage_client()
+        try:
+            manifest_blob = client.bucket(GCS_BUCKET_NAME).blob(GOLD_SURVEY_CURRENT_MANIFEST)
+            if manifest_blob.exists():
+                manifest = json.loads(manifest_blob.download_as_text())
+                entries = []
+                for table_name, table_entries in manifest.get("tables", {}).items():
+                    for entry in table_entries:
+                        entries.append(
+                            (
+                                table_name,
+                                str(entry["name"]),
+                                int(entry.get("generation") or 0),
+                                int(entry.get("size") or 0),
+                            )
+                        )
+                if entries and REQUIRED_GOLD_SURVEY_TABLES.issubset({entry[0] for entry in entries}):
+                    return tuple(sorted(entries)), ""
+        except Exception:
+            # Fall back to scanning versioned table prefixes if the pointer is absent or stale.
+            pass
         candidates_by_table: Dict[str, List[Tuple[str, str, str, int, int]]] = {}
         for table_name, prefix in GOLD_SURVEY_TABLE_PREFIXES.items():
             candidates = []
@@ -1779,6 +1833,30 @@ def survey_gold_tables_manifest() -> Tuple[Tuple[Tuple[str, str, int, int], ...]
                 )
             candidates_by_table[table_name] = candidates
 
+        def latest_table_entries(
+            candidates: List[Tuple[str, str, str, int, int]]
+        ) -> List[Tuple[str, str, int, int]]:
+            if not candidates:
+                return []
+            versioned: Dict[str, List[Tuple[str, str, int, int]]] = {}
+            legacy_entries: List[Tuple[str, str, int, int]] = []
+            for run_id, table, name, generation, size in candidates:
+                entry = (table, name, generation, size)
+                if run_id:
+                    versioned.setdefault(run_id, []).append(entry)
+                else:
+                    legacy_entries.append(entry)
+            if versioned:
+                latest_run_id = sorted(
+                    (
+                        max(generation for _table, _name, generation, _size in entries),
+                        run_id,
+                    )
+                    for run_id, entries in versioned.items()
+                )[-1][1]
+                return versioned[latest_run_id]
+            return legacy_entries
+
         versioned_runs: Dict[str, Dict[str, List[Tuple[str, str, int, int]]]] = {}
         for table_name, candidates in candidates_by_table.items():
             for run_id, table, name, generation, size in candidates:
@@ -1789,12 +1867,13 @@ def survey_gold_tables_manifest() -> Tuple[Tuple[Tuple[str, str, int, int], ...]
                 )
 
         complete_runs = []
-        required_tables = set(GOLD_SURVEY_TABLE_PREFIXES)
+        required_tables = REQUIRED_GOLD_SURVEY_TABLES
         for run_id, table_entries in versioned_runs.items():
             if required_tables.issubset(table_entries):
                 newest_generation = max(
                     generation
-                    for entries_for_table in table_entries.values()
+                    for table_name, entries_for_table in table_entries.items()
+                    if table_name in required_tables
                     for _table, _name, generation, _size in entries_for_table
                 )
                 complete_runs.append((newest_generation, run_id))
@@ -1803,23 +1882,18 @@ def survey_gold_tables_manifest() -> Tuple[Tuple[Tuple[str, str, int, int], ...]
         if complete_runs:
             _generation, latest_run_id = sorted(complete_runs)[-1]
             for table_name in GOLD_SURVEY_TABLE_PREFIXES:
-                entries.extend(versioned_runs[latest_run_id][table_name])
+                same_run_entries = versioned_runs[latest_run_id].get(table_name)
+                if same_run_entries:
+                    entries.extend(same_run_entries)
+                elif table_name not in required_tables:
+                    entries.extend(latest_table_entries(candidates_by_table.get(table_name, [])))
             return tuple(sorted(entries)), ""
 
-        missing_tables = []
         for table_name, candidates in candidates_by_table.items():
-            legacy_entries = [
-                (table, name, generation, size)
-                for run_id, table, name, generation, size in candidates
-                if not run_id
-            ]
-            if legacy_entries:
-                entries.extend(legacy_entries)
-            else:
-                missing_tables.append(table_name)
-
-        if missing_tables:
-            return tuple(), f"Gold survey thiếu full run_id hoặc bảng legacy: {', '.join(missing_tables)}"
+            table_entries = latest_table_entries(candidates)
+            if table_name in required_tables and not table_entries:
+                return tuple(), f"Gold survey thiếu bảng bắt buộc: {table_name}"
+            entries.extend(table_entries)
         return tuple(sorted(entries)), ""
     except Exception as exc:
         return tuple(), str(exc)
@@ -1911,6 +1985,20 @@ def partition_values_from_blob_name(blob_name: str) -> Dict[str, str]:
 def load_gold_survey_prepared_data(
     manifest: Tuple[Tuple[str, str, int, int], ...],
 ) -> Tuple[BoardPreparedData, Tuple[int, int], str]:
+    cache_path = gold_survey_cache_path(manifest)
+    if cache_path.exists():
+        try:
+            payload = pd.read_pickle(cache_path)
+            if payload.get("manifest") == manifest and payload.get("pipeline_version") == PIPELINE_VERSION:
+                board_data = BoardPreparedData(
+                    raw_analysis=payload["raw_analysis"],
+                    cleaned=payload["cleaned"],
+                    gold_tables=payload["gold_tables"],
+                )
+                return board_data, tuple(payload["input_shape"]), str(payload["gold_status"])
+        except (OSError, ValueError, EOFError, KeyError, AttributeError):
+            pass
+
     client = create_gcs_storage_client()
     bucket = client.bucket(GCS_BUCKET_NAME)
     grouped: Dict[str, List[str]] = {table_name: [] for table_name in GOLD_SURVEY_TABLE_PREFIXES}
@@ -1927,24 +2015,41 @@ def load_gold_survey_prepared_data(
                     frame[column] = value
             frames.append(frame)
         if not frames:
-            raise ValueError(f"Gold survey thiếu dữ liệu bảng {table_name}")
+            if table_name in REQUIRED_GOLD_SURVEY_TABLES:
+                raise ValueError(f"Gold survey thiếu dữ liệu bảng {table_name}")
+            continue
         gold_tables[table_name] = pd.concat(frames, ignore_index=True, sort=False)
 
+    if "survey_analytic_features" not in gold_tables:
+        raise ValueError("Gold survey thiếu bảng survey_analytic_features")
     gold = normalize_gold_analytic_for_dashboard(gold_tables["survey_analytic_features"])
     required = ["Target", *RESEARCH_FEATURES]
     missing = [column for column in required if column not in gold.columns]
     if missing:
         raise ValueError(f"Gold analytic features thiếu cột bắt buộc: {missing}")
 
-    return (
-        BoardPreparedData(
-            raw_analysis=gold,
-            cleaned=gold[required].copy(),
-            gold_tables=gold_tables,
-        ),
-        tuple(gold.shape),
-        gold_table_status(gold_tables),
+    board_data = BoardPreparedData(
+        raw_analysis=gold,
+        cleaned=gold[required].copy(),
+        gold_tables=gold_tables,
     )
+    input_shape = tuple(gold.shape)
+    status_text = gold_table_status(gold_tables)
+
+    LOCAL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    pd.to_pickle(
+        {
+            "manifest": manifest,
+            "pipeline_version": PIPELINE_VERSION,
+            "input_shape": input_shape,
+            "gold_status": status_text,
+            "raw_analysis": board_data.raw_analysis,
+            "cleaned": board_data.cleaned,
+            "gold_tables": board_data.gold_tables,
+        },
+        cache_path,
+    )
+    return board_data, input_shape, status_text
 
 
 def load_data_ui() -> Tuple[Optional[BoardPreparedData], str, Tuple[int, int], str]:
@@ -4180,6 +4285,89 @@ def aggregate_chat_distribution(frame: pd.DataFrame, value_column: str, label_co
     return result
 
 
+CHAT_COUNT_COLUMNS = [
+    "total_messages",
+    "rag_messages",
+    "non_rag_messages",
+    "high_risk_count",
+    "medium_risk_count",
+    "low_risk_count",
+    "positive_count",
+    "neutral_count",
+    "negative_count",
+    "harm_intent_count",
+    "self_harm_count",
+    "mental_health_count",
+    "rag_question_count",
+    "general_count",
+]
+
+CHAT_RISK_LABELS = {
+    "low": "Thấp",
+    "medium": "Trung bình",
+    "high": "Cao",
+    "unknown": "Không rõ",
+}
+
+CHAT_SENTIMENT_LABELS = {
+    "positive": "Tích cực",
+    "neutral": "Trung tính",
+    "negative": "Tiêu cực",
+    "unknown": "Không rõ",
+}
+
+CHAT_RISK_COLORS = {
+    "Thấp": THEME["teal"],
+    "Trung bình": THEME["gold"],
+    "Cao": THEME["danger"],
+    "Không rõ": THEME["muted"],
+}
+
+CHAT_SENTIMENT_COLORS = {
+    "Tích cực": THEME["secondary"],
+    "Trung tính": THEME["muted"],
+    "Tiêu cực": THEME["danger"],
+    "Không rõ": THEME["muted"],
+}
+
+CHAT_TOPIC_LABELS = {
+    "rag_question": "Hỏi tài liệu / hỗ trợ học tập",
+    "harm_intent": "Nội dung nguy cơ gây hại",
+    "self_harm": "Nội dung tự gây hại",
+    "mental_health": "Sức khỏe tâm lý",
+    "general": "Hỗ trợ chung",
+    "unknown": "Không rõ chủ đề",
+}
+
+CHAT_HOURLY_TOPIC_COLUMNS = {
+    "rag_question_count": "Hỏi tài liệu / hỗ trợ học tập",
+    "harm_intent_count": "Nội dung nguy cơ gây hại",
+    "self_harm_count": "Nội dung tự gây hại",
+    "mental_health_count": "Sức khỏe tâm lý",
+    "general_count": "Hỗ trợ chung",
+}
+
+
+def chat_label(value: object, mapping: Dict[str, str]) -> str:
+    key = str(value).strip().lower()
+    return mapping.get(key, str(value))
+
+
+def chat_pct(value: float) -> str:
+    return f"{float(value):.1f}%"
+
+
+def chat_count(value: float) -> str:
+    return f"{int(round(float(value))):,} lượt"
+
+
+def chat_time_label(value: object, include_hour: bool = True) -> str:
+    timestamp = pd.to_datetime(value, errors="coerce")
+    if pd.isna(timestamp):
+        return "-"
+    return timestamp.strftime("%d/%m %H:00") if include_hour else timestamp.strftime("%d/%m")
+
+
 def prepare_chat_timeline(metrics: pd.DataFrame) -> pd.DataFrame:
     if metrics.empty or "date" not in metrics.columns or "hour" not in metrics.columns:
         return pd.DataFrame()
@@ -4208,6 +4396,29 @@ def prepare_chat_timeline(metrics: pd.DataFrame) -> pd.DataFrame:
         if column not in timeline.columns:
             timeline[column] = 0
         timeline[column] = pd.to_numeric(timeline[column], errors="coerce").fillna(0)
+    if not timeline.empty:
+        for avg_column in ["avg_question_length", "avg_answer_length"]:
+            timeline[f"__weighted_{avg_column}"] = timeline[avg_column] * timeline["total_messages"]
+        grouped = (
+            timeline.groupby(["date", "hour"], as_index=False)
+            [[
+                *CHAT_COUNT_COLUMNS,
+                "__weighted_avg_question_length",
+                "__weighted_avg_answer_length",
+            ]]
+            .sum()
+        )
+        grouped["avg_question_length"] = np.where(
+            grouped["total_messages"] > 0,
+            (grouped["__weighted_avg_question_length"] / grouped["total_messages"]).round(2),
+            0.0,
+        )
+        grouped["avg_answer_length"] = np.where(
+            grouped["total_messages"] > 0,
+            (grouped["__weighted_avg_answer_length"] / grouped["total_messages"]).round(2),
+            0.0,
+        )
+        timeline = grouped.drop(columns=["__weighted_avg_question_length", "__weighted_avg_answer_length"])
     timeline["date_hour"] = pd.to_datetime(
         timeline["date"].astype(str)
         + " "
@@ -4234,26 +4445,14 @@ def aggregate_chat_timeframe(timeline: pd.DataFrame, level: str) -> pd.DataFrame
     elif level == "month":
         work["period"] = work["date_hour"].dt.to_period("M").dt.to_timestamp()
         label = "month"
+    elif level == "year":
+        work["period"] = work["date_hour"].dt.to_period("Y").dt.to_timestamp()
+        label = "year"
     else:
         work["period"] = work["date_hour"]
         label = "date_hour"
 
-    count_columns = [
-        "total_messages",
-        "rag_messages",
-        "non_rag_messages",
-        "high_risk_count",
-        "medium_risk_count",
-        "low_risk_count",
-        "positive_count",
-        "neutral_count",
-        "negative_count",
-        "harm_intent_count",
-        "self_harm_count",
-        "mental_health_count",
-        "rag_question_count",
-        "general_count",
-    ]
+    count_columns = [column for column in CHAT_COUNT_COLUMNS if column in work.columns]
     grouped = work.groupby("period", as_index=False)[count_columns].sum()
     grouped["rag_rate_pct"] = np.where(
         grouped["total_messages"] > 0,
@@ -4264,42 +4463,783 @@ def aggregate_chat_timeframe(timeline: pd.DataFrame, level: str) -> pd.DataFrame
     return grouped.sort_values(label).reset_index(drop=True)
 
 
-def make_chat_volume_line(frame: pd.DataFrame, x_column: str, title: str):
+def aggregate_chat_hour_of_day(timeline: pd.DataFrame) -> pd.DataFrame:
+    if timeline.empty or "date_hour" not in timeline.columns:
+        return pd.DataFrame()
+    work = timeline.copy()
+    work["hour"] = work["date_hour"].dt.hour
+    count_columns = [column for column in CHAT_COUNT_COLUMNS if column in work.columns]
+    grouped = work.groupby("hour", as_index=False)[count_columns].sum()
+    grouped["hour_label"] = grouped["hour"].astype(int).astype(str).str.zfill(2) + ":00"
+    grouped["rag_rate_pct"] = np.where(
+        grouped["total_messages"] > 0,
+        (grouped["rag_messages"] / grouped["total_messages"] * 100).round(2),
+        0.0,
+    )
+    return grouped.sort_values("hour").reset_index(drop=True)
+
+
+def make_chat_time_line(frame: pd.DataFrame, x_column: str, title: str):
+    if frame.empty or x_column not in frame.columns or "total_messages" not in frame.columns:
+        return None
+    plot_df = frame[[x_column, "total_messages"]].copy()
+    plot_df["total_messages"] = pd.to_numeric(plot_df["total_messages"], errors="coerce").fillna(0)
+    fig = px.line(
+        plot_df,
+        x=x_column,
+        y="total_messages",
+        markers=True,
+        title=title,
+        labels={x_column: "", "total_messages": "Lượt chat"},
+    )
+    fig.update_traces(line=dict(color=THEME["primary"], width=3), marker=dict(size=8))
+    fig.update_layout(hovermode="x unified", showlegend=False, yaxis_title="Lượt chat")
+    if x_column == "hour_label":
+        fig.update_xaxes(type="category", categoryorder="array", categoryarray=plot_df[x_column].tolist(), title_text="Giờ trong ngày")
+    elif x_column == "date":
+        fig.update_xaxes(tickformat="%b %d", title_text="Ngày")
+    elif x_column == "month":
+        fig.update_xaxes(tickformat="%b %Y", title_text="Tháng")
+    elif x_column == "year":
+        fig.update_xaxes(tickformat="%Y", title_text="Năm")
+    fig.update_yaxes(rangemode="tozero")
+    return style_figure(fig, 390)
+
+
+def make_chat_sentiment_line(frame: pd.DataFrame, x_column: str, title: str):
     if frame.empty or x_column not in frame.columns:
         return None
-    value_columns = [
-        column
-        for column in ["total_messages", "rag_messages", "high_risk_count", "negative_count"]
-        if column in frame.columns
-    ]
+    value_columns = [column for column in ["positive_count", "neutral_count", "negative_count"] if column in frame.columns]
     if not value_columns:
         return None
     labels = {
-        "total_messages": "Tổng lượt chat",
-        "rag_messages": "Dùng tài liệu",
-        "high_risk_count": "Nguy cơ cao",
-        "negative_count": "Cảm xúc tiêu cực",
+        "positive_count": "Tích cực",
+        "neutral_count": "Trung tính",
+        "negative_count": "Tiêu cực",
     }
-    plot_df = frame[[x_column, *value_columns]].melt(
+    plot_df = frame[[x_column, *value_columns]].copy()
+    for column in value_columns:
+        plot_df[column] = pd.to_numeric(plot_df[column], errors="coerce").fillna(0)
+    plot_df = plot_df.melt(
         id_vars=x_column,
         value_vars=value_columns,
-        var_name="Metric",
+        var_name="Cảm xúc",
         value_name="Messages",
     )
-    plot_df["Metric"] = plot_df["Metric"].map(labels).fillna(plot_df["Metric"])
+    plot_df["Cảm xúc"] = plot_df["Cảm xúc"].map(labels).fillna(plot_df["Cảm xúc"])
     fig = px.line(
         plot_df,
         x=x_column,
         y="Messages",
-        color="Metric",
+        color="Cảm xúc",
         markers=True,
         title=title,
-        color_discrete_sequence=PALETTE,
+        color_discrete_map=CHAT_SENTIMENT_COLORS,
     )
     fig.update_traces(line=dict(width=3), marker=dict(size=8))
     fig.update_layout(hovermode="x unified", legend_title_text="", yaxis_title="Lượt chat")
+    if x_column == "date":
+        fig.update_xaxes(tickformat="%b %d", title_text="Ngày")
     fig.update_yaxes(rangemode="tozero")
     return style_figure(fig, 390)
+
+
+def prepare_chat_construct_detail(summary: pd.DataFrame) -> pd.DataFrame:
+    if summary.empty or "chat_construct" not in summary.columns:
+        return pd.DataFrame()
+    detail = summary.copy()
+    for column in [
+        "count",
+        "high_risk_count",
+        "negative_count",
+        "rag_messages",
+        "unique_sessions",
+        "avg_question_length",
+        "percentage",
+        "high_risk_rate",
+        "negative_rate",
+        "rag_rate",
+    ]:
+        if column not in detail.columns:
+            detail[column] = 0
+        detail[column] = pd.to_numeric(detail[column], errors="coerce").fillna(0)
+    if "date" in detail.columns:
+        detail["date"] = pd.to_datetime(detail["date"], errors="coerce")
+    detail["chat_construct"] = detail["chat_construct"].fillna("Không rõ cụm").astype(str)
+    detail = detail.dropna(subset=["date"]).reset_index(drop=True)
+    if detail.empty:
+        return detail
+    detail["__weighted_avg_question_length"] = detail["avg_question_length"] * detail["count"]
+    detail = (
+        detail.groupby(["date", "chat_construct"], as_index=False)
+        [[
+            "count",
+            "high_risk_count",
+            "negative_count",
+            "rag_messages",
+            "unique_sessions",
+            "__weighted_avg_question_length",
+        ]]
+        .sum()
+    )
+    detail["avg_question_length"] = np.where(
+        detail["count"] > 0,
+        (detail["__weighted_avg_question_length"] / detail["count"]).round(2),
+        0.0,
+    )
+    date_total = detail.groupby("date")["count"].transform("sum")
+    detail["percentage"] = np.where(date_total > 0, (detail["count"] / date_total * 100).round(2), 0.0)
+    detail["high_risk_rate"] = np.where(detail["count"] > 0, (detail["high_risk_count"] / detail["count"] * 100).round(2), 0.0)
+    detail["negative_rate"] = np.where(detail["count"] > 0, (detail["negative_count"] / detail["count"] * 100).round(2), 0.0)
+    detail["rag_rate"] = np.where(detail["count"] > 0, (detail["rag_messages"] / detail["count"] * 100).round(2), 0.0)
+    return detail.drop(columns=["__weighted_avg_question_length"]).reset_index(drop=True)
+
+
+def chat_construct_options(detail: pd.DataFrame) -> List[str]:
+    if detail.empty or "chat_construct" not in detail.columns:
+        return []
+    totals = detail.groupby("chat_construct")["count"].sum().sort_values(ascending=False)
+    return totals.index.tolist()
+
+
+def chat_construct_summary_metrics(detail: pd.DataFrame, selected_construct: str) -> Dict[str, object]:
+    selected = detail[detail["chat_construct"] == selected_construct].copy()
+    total_all = float(detail["count"].sum()) if not detail.empty else 0.0
+    total = int(selected["count"].sum()) if not selected.empty else 0
+    high_risk = int(selected["high_risk_count"].sum()) if not selected.empty else 0
+    negative = int(selected["negative_count"].sum()) if not selected.empty else 0
+    rag = int(selected["rag_messages"].sum()) if not selected.empty else 0
+    sessions = int(selected["unique_sessions"].sum()) if not selected.empty else 0
+    peak_label = "-"
+    peak_messages = 0
+    if not selected.empty:
+        peak = selected.sort_values("count", ascending=False).iloc[0]
+        peak_label = chat_time_label(peak.get("date"), include_hour=False)
+        peak_messages = int(peak.get("count", 0))
+    return {
+        "total": total,
+        "share": round(total / total_all * 100, 1) if total_all else 0.0,
+        "high_risk": high_risk,
+        "high_risk_rate": round(high_risk / total * 100, 1) if total else 0.0,
+        "negative": negative,
+        "negative_rate": round(negative / total * 100, 1) if total else 0.0,
+        "rag": rag,
+        "rag_rate": round(rag / total * 100, 1) if total else 0.0,
+        "sessions": sessions,
+        "peak_label": peak_label,
+        "peak_messages": peak_messages,
+    }
+
+
+def make_chat_construct_detail_trend(detail: pd.DataFrame, selected_construct: str):
+    selected = detail[detail["chat_construct"] == selected_construct].copy()
+    if selected.empty:
+        return None
+    selected = selected.sort_values("date")
+    plot = selected[["date", "count", "high_risk_count", "negative_count"]].melt(
+        id_vars="date",
+        value_vars=["count", "high_risk_count", "negative_count"],
+        var_name="Chỉ số",
+        value_name="Lượt",
+    )
+    labels = {
+        "count": "Tổng lượt",
+        "high_risk_count": "Nguy cơ cao",
+        "negative_count": "Cảm xúc tiêu cực",
+    }
+    plot["Chỉ số"] = plot["Chỉ số"].map(labels)
+    fig = px.line(
+        plot,
+        x="date",
+        y="Lượt",
+        color="Chỉ số",
+        markers=True,
+        title=f"Diễn biến theo ngày của cụm: {selected_construct}",
+        color_discrete_map={
+            "Tổng lượt": THEME["primary"],
+            "Nguy cơ cao": THEME["danger"],
+            "Cảm xúc tiêu cực": THEME["gold"],
+        },
+    )
+    fig.update_traces(line=dict(width=3), marker=dict(size=8))
+    fig.update_xaxes(tickformat="%d/%m", title_text="Ngày")
+    fig.update_yaxes(rangemode="tozero")
+    fig.update_layout(hovermode="x unified", yaxis_title="Lượt")
+    return board_chart_layout(fig, 390, right_margin=48, bottom_margin=72)
+
+
+def make_chat_construct_detail_rates(metrics: Dict[str, object], selected_construct: str):
+    plot = pd.DataFrame(
+        {
+            "Chỉ số": ["Nguy cơ cao", "Cảm xúc tiêu cực", "Dùng tài liệu tham chiếu"],
+            "Tỷ lệ (%)": [metrics["high_risk_rate"], metrics["negative_rate"], metrics["rag_rate"]],
+        }
+    )
+    fig = px.bar(
+        plot,
+        x="Chỉ số",
+        y="Tỷ lệ (%)",
+        text="Tỷ lệ (%)",
+        color="Chỉ số",
+        color_discrete_map={
+            "Nguy cơ cao": THEME["danger"],
+            "Cảm xúc tiêu cực": THEME["gold"],
+            "Dùng tài liệu tham chiếu": THEME["primary"],
+        },
+        title=f"Cụm {selected_construct} có tín hiệu gì đáng chú ý?",
+    )
+    fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside", cliponaxis=False)
+    fig.update_yaxes(rangemode="tozero")
+    fig.update_layout(xaxis_title="", yaxis_title="Tỷ lệ trong cụm", showlegend=False)
+    return board_chart_layout(fig, 390, right_margin=48, bottom_margin=72)
+
+
+def chat_construct_detail_table(detail: pd.DataFrame, selected_construct: str) -> pd.DataFrame:
+    selected = detail[detail["chat_construct"] == selected_construct].copy()
+    if selected.empty:
+        return pd.DataFrame()
+    selected = selected.sort_values("date")
+    table = selected[
+        [
+            "date",
+            "count",
+            "high_risk_count",
+            "negative_count",
+            "rag_messages",
+            "unique_sessions",
+            "high_risk_rate",
+            "negative_rate",
+            "rag_rate",
+        ]
+    ].copy()
+    table["date"] = table["date"].dt.strftime("%d/%m/%Y")
+    return table.rename(
+        columns={
+            "date": "Ngày",
+            "count": "Tổng lượt",
+            "high_risk_count": "Nguy cơ cao",
+            "negative_count": "Cảm xúc tiêu cực",
+            "rag_messages": "Dùng tài liệu tham chiếu",
+            "unique_sessions": "Phiên hội thoại",
+            "high_risk_rate": "Tỷ lệ nguy cơ cao (%)",
+            "negative_rate": "Tỷ lệ tiêu cực (%)",
+            "rag_rate": "Tỷ lệ dùng tài liệu (%)",
+        }
+    )
+
+
+def chat_peak_topic_from_row(row: pd.Series) -> Tuple[str, int]:
+    counts = {}
+    for column, label in CHAT_HOURLY_TOPIC_COLUMNS.items():
+        if column in row.index:
+            counts[label] = int(pd.to_numeric(pd.Series([row[column]]), errors="coerce").fillna(0).iloc[0])
+    if not counts:
+        return "Không rõ chủ đề", 0
+    topic, count = max(counts.items(), key=lambda item: item[1])
+    return topic, count
+
+
+def build_chat_time_insights(
+    timeline: pd.DataFrame,
+    daily_timeline: pd.DataFrame,
+    hourly_timeline: pd.DataFrame,
+    topic_totals: pd.DataFrame,
+    sentiment_totals: pd.DataFrame,
+) -> Dict[str, object]:
+    empty = {
+        "peak_time": "-",
+        "peak_messages": 0,
+        "peak_share": 0.0,
+        "peak_topic": "Không rõ chủ đề",
+        "peak_topic_count": 0,
+        "peak_high_risk": 0,
+        "peak_negative": 0,
+        "peak_rag": 0,
+        "peak_reason": "Chưa có dữ liệu thời gian để xác định cao điểm.",
+        "top_day": "-",
+        "top_day_messages": 0,
+        "top_hour": "-",
+        "top_hour_messages": 0,
+        "top_topic": "Không rõ chủ đề",
+        "top_sentiment": "Không rõ cảm xúc",
+    }
+    if timeline.empty:
+        return empty
+
+    total_messages = float(pd.to_numeric(timeline.get("total_messages", pd.Series(dtype=float)), errors="coerce").fillna(0).sum())
+    peak = timeline.sort_values("total_messages", ascending=False).iloc[0]
+    peak_messages = int(peak.get("total_messages", 0))
+    peak_topic, peak_topic_count = chat_peak_topic_from_row(peak)
+    peak_high_risk = int(peak.get("high_risk_count", 0))
+    peak_negative = int(peak.get("negative_count", 0))
+    peak_rag = int(peak.get("rag_messages", 0))
+
+    top_day = daily_timeline.sort_values("total_messages", ascending=False).iloc[0] if not daily_timeline.empty else pd.Series(dtype=object)
+    top_hour = hourly_timeline.sort_values("total_messages", ascending=False).iloc[0] if not hourly_timeline.empty else pd.Series(dtype=object)
+    top_topic = "Không rõ chủ đề"
+    if not topic_totals.empty and {"Topic", "Messages"}.issubset(topic_totals.columns):
+        topic_row = topic_totals.sort_values("Messages", ascending=False).iloc[0]
+        top_topic = chat_label(topic_row["Topic"], CHAT_TOPIC_LABELS)
+    top_sentiment = "Không rõ cảm xúc"
+    if not sentiment_totals.empty and {"Sentiment", "Messages"}.issubset(sentiment_totals.columns):
+        sentiment_row = sentiment_totals.sort_values("Messages", ascending=False).iloc[0]
+        top_sentiment = chat_label(sentiment_row["Sentiment"], CHAT_SENTIMENT_LABELS)
+
+    risk_part = f"{peak_high_risk} lượt nguy cơ cao" if peak_high_risk else "không có lượt nguy cơ cao"
+    negative_part = f"{peak_negative} lượt tiêu cực" if peak_negative else "không có lượt tiêu cực"
+    rag_part = f"{peak_rag} lượt dùng tài liệu tham chiếu" if peak_rag else "không có lượt dùng tài liệu tham chiếu"
+    peak_reason = (
+        f"Cao điểm tập trung ở nhóm '{peak_topic}' ({peak_topic_count}/{peak_messages} lượt), "
+        f"kèm {risk_part}, {negative_part} và {rag_part}."
+    )
+    return {
+        "peak_time": chat_time_label(peak.get("date_hour")),
+        "peak_messages": peak_messages,
+        "peak_share": round(peak_messages / total_messages * 100, 1) if total_messages else 0.0,
+        "peak_topic": peak_topic,
+        "peak_topic_count": peak_topic_count,
+        "peak_high_risk": peak_high_risk,
+        "peak_negative": peak_negative,
+        "peak_rag": peak_rag,
+        "peak_reason": peak_reason,
+        "top_day": chat_time_label(top_day.get("date"), include_hour=False) if not top_day.empty else "-",
+        "top_day_messages": int(top_day.get("total_messages", 0)) if not top_day.empty else 0,
+        "top_hour": str(top_hour.get("hour_label", "-")) if not top_hour.empty else "-",
+        "top_hour_messages": int(top_hour.get("total_messages", 0)) if not top_hour.empty else 0,
+        "top_topic": top_topic,
+        "top_sentiment": top_sentiment,
+    }
+
+
+def make_chat_peak_slot_bar(timeline: pd.DataFrame):
+    if timeline.empty or not {"date_hour", "total_messages"}.issubset(timeline.columns):
+        return None
+    plot = timeline.copy()
+    for column in ["total_messages", "high_risk_count", "negative_count", "rag_messages"]:
+        if column not in plot.columns:
+            plot[column] = 0
+        plot[column] = pd.to_numeric(plot[column], errors="coerce").fillna(0)
+    plot = plot.sort_values("total_messages", ascending=False).head(8).copy()
+    if plot.empty:
+        return None
+    plot["Khung thời gian"] = plot["date_hour"].apply(chat_time_label)
+    plot["Chủ đề nổi bật"] = plot.apply(lambda row: chat_peak_topic_from_row(row)[0], axis=1)
+    plot = plot.sort_values("total_messages", ascending=True)
+    fig = px.bar(
+        plot,
+        x="total_messages",
+        y="Khung thời gian",
+        orientation="h",
+        text="total_messages",
+        color="high_risk_count",
+        color_continuous_scale=[[0, THEME["primary_soft"]], [0.5, THEME["gold"]], [1, THEME["danger"]]],
+        title="Các khung thời gian có nhu cầu tư vấn tâm lý cao nhất",
+        labels={"total_messages": "Lượt chat", "high_risk_count": "Nguy cơ cao"},
+        hover_data={
+            "Chủ đề nổi bật": True,
+            "total_messages": ":,",
+            "high_risk_count": ":,",
+            "negative_count": ":,",
+            "rag_messages": ":,",
+        },
+    )
+    fig.update_traces(texttemplate="%{text:,}", textposition="outside", cliponaxis=False)
+    fig.update_layout(xaxis_title="Lượt chat", yaxis_title="", coloraxis_colorbar_title="Nguy cơ cao")
+    return board_chart_layout(fig, 420, left_margin=112, right_margin=64)
+
+
+def make_chat_hour_volume_bar(hourly_timeline: pd.DataFrame):
+    if hourly_timeline.empty or not {"hour_label", "total_messages"}.issubset(hourly_timeline.columns):
+        return None
+    plot = hourly_timeline.copy()
+    plot["total_messages"] = pd.to_numeric(plot["total_messages"], errors="coerce").fillna(0)
+    plot["high_risk_count"] = pd.to_numeric(plot.get("high_risk_count", 0), errors="coerce").fillna(0)
+    plot = plot.sort_values("hour")
+    fig = px.bar(
+        plot,
+        x="hour_label",
+        y="total_messages",
+        text="total_messages",
+        color="high_risk_count",
+        color_continuous_scale=[[0, THEME["primary_soft"]], [0.5, THEME["gold"]], [1, THEME["danger"]]],
+        title="Khung giờ người dùng hỏi nhiều nhất",
+        labels={"hour_label": "Giờ trong ngày", "total_messages": "Lượt chat", "high_risk_count": "Nguy cơ cao"},
+        hover_data={"high_risk_count": ":,"},
+    )
+    fig.update_traces(texttemplate="%{text:,}", textposition="outside", cliponaxis=False)
+    fig.update_xaxes(type="category", categoryorder="array", categoryarray=plot["hour_label"].tolist())
+    fig.update_layout(yaxis_title="Lượt chat", coloraxis_colorbar_title="Nguy cơ cao")
+    fig.update_yaxes(rangemode="tozero")
+    return board_chart_layout(fig, 370, right_margin=48, bottom_margin=72)
+
+
+def chat_topic_total_by_label(topic_totals: pd.DataFrame, topic_label: str) -> int:
+    if topic_totals.empty or not {"Topic", "Messages"}.issubset(topic_totals.columns):
+        return 0
+    work = topic_totals.copy()
+    work["Chủ đề"] = work["Topic"].map(lambda value: chat_label(value, CHAT_TOPIC_LABELS))
+    return int(pd.to_numeric(work.loc[work["Chủ đề"] == topic_label, "Messages"], errors="coerce").fillna(0).sum())
+
+
+def make_chat_peak_profile_bar(timeline: pd.DataFrame, topic_totals: pd.DataFrame):
+    if timeline.empty:
+        return None
+    total_messages = float(pd.to_numeric(timeline["total_messages"], errors="coerce").fillna(0).sum())
+    if total_messages <= 0:
+        return None
+    peak = timeline.sort_values("total_messages", ascending=False).iloc[0]
+    peak_messages = float(peak.get("total_messages", 0))
+    if peak_messages <= 0:
+        return None
+    peak_topic, peak_topic_count = chat_peak_topic_from_row(peak)
+    rows = [
+        {
+            "Yếu tố": f"Chủ đề chính",
+            "Cao điểm": peak_topic_count / peak_messages * 100,
+            "Toàn kỳ": chat_topic_total_by_label(topic_totals, peak_topic) / total_messages * 100,
+            "Ghi chú": peak_topic,
+        },
+        {
+            "Yếu tố": "Dùng tài liệu",
+            "Cao điểm": float(peak.get("rag_messages", 0)) / peak_messages * 100,
+            "Toàn kỳ": float(pd.to_numeric(timeline["rag_messages"], errors="coerce").fillna(0).sum()) / total_messages * 100,
+            "Ghi chú": "Câu trả lời có dùng tài liệu tham chiếu",
+        },
+        {
+            "Yếu tố": "Nguy cơ cao",
+            "Cao điểm": float(peak.get("high_risk_count", 0)) / peak_messages * 100,
+            "Toàn kỳ": float(pd.to_numeric(timeline["high_risk_count"], errors="coerce").fillna(0).sum()) / total_messages * 100,
+            "Ghi chú": "Tin nhắn có mức nguy cơ cao",
+        },
+        {
+            "Yếu tố": "Cảm xúc tiêu cực",
+            "Cao điểm": float(peak.get("negative_count", 0)) / peak_messages * 100,
+            "Toàn kỳ": float(pd.to_numeric(timeline["negative_count"], errors="coerce").fillna(0).sum()) / total_messages * 100,
+            "Ghi chú": "Tin nhắn có cảm xúc tiêu cực",
+        },
+    ]
+    plot = pd.DataFrame(rows).melt(
+        id_vars=["Yếu tố", "Ghi chú"],
+        value_vars=["Cao điểm", "Toàn kỳ"],
+        var_name="Phạm vi",
+        value_name="Tỷ lệ (%)",
+    )
+    plot["Tỷ lệ (%)"] = plot["Tỷ lệ (%)"].round(1)
+    fig = px.bar(
+        plot,
+        x="Tỷ lệ (%)",
+        y="Yếu tố",
+        color="Phạm vi",
+        barmode="group",
+        orientation="h",
+        text="Tỷ lệ (%)",
+        title="Trong cao điểm, yếu tố nào tăng mạnh?",
+        color_discrete_map={"Cao điểm": THEME["danger"], "Toàn kỳ": THEME["muted"]},
+        hover_data={"Ghi chú": True, "Tỷ lệ (%)": ":.1f"},
+    )
+    fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside", cliponaxis=False)
+    fig.update_layout(xaxis_title="Tỷ lệ trong phạm vi (%)", yaxis_title="", legend_title_text="")
+    fig.update_xaxes(range=[0, min(110, max(100, plot["Tỷ lệ (%)"].max() * 1.18))])
+    return board_chart_layout(fig, 390, left_margin=118, right_margin=62)
+
+
+def make_chat_risk_sentiment_summary(risk_totals: pd.DataFrame, sentiment_totals: pd.DataFrame):
+    rows = []
+    if not risk_totals.empty and {"Risk level", "Messages"}.issubset(risk_totals.columns):
+        for _, row in risk_totals.iterrows():
+            label = chat_label(row["Risk level"], CHAT_RISK_LABELS)
+            rows.append(
+                {
+                    "Nhóm": "Nguy cơ",
+                    "Mức": label,
+                    "Lượt": int(row["Messages"]),
+                    "Tỷ lệ (%)": float(row.get("Share %", 0.0)),
+                }
+            )
+    if not sentiment_totals.empty and {"Sentiment", "Messages"}.issubset(sentiment_totals.columns):
+        for _, row in sentiment_totals.iterrows():
+            label = chat_label(row["Sentiment"], CHAT_SENTIMENT_LABELS)
+            rows.append(
+                {
+                    "Nhóm": "Cảm xúc",
+                    "Mức": label,
+                    "Lượt": int(row["Messages"]),
+                    "Tỷ lệ (%)": float(row.get("Share %", 0.0)),
+                }
+            )
+    plot = pd.DataFrame(rows)
+    if plot.empty:
+        return None
+    color_map = {**CHAT_RISK_COLORS, **CHAT_SENTIMENT_COLORS}
+    fig = px.bar(
+        plot,
+        x="Mức",
+        y="Lượt",
+        color="Mức",
+        facet_col="Nhóm",
+        text="Tỷ lệ (%)",
+        title="Nguy cơ và cảm xúc tổng hợp",
+        color_discrete_map=color_map,
+        hover_data={"Lượt": ":,", "Tỷ lệ (%)": ":.1f"},
+    )
+    fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside", cliponaxis=False)
+    fig.update_layout(showlegend=False, yaxis_title="Lượt chat")
+    fig.for_each_annotation(lambda annotation: annotation.update(text=annotation.text.split("=")[-1]))
+    return board_chart_layout(fig, 390, right_margin=48, bottom_margin=82)
+
+
+def chat_sentiment_summary_values(sentiment_totals: pd.DataFrame, timeline: pd.DataFrame) -> Dict[str, object]:
+    values: Dict[str, Dict[str, float]] = {
+        "Tích cực": {"count": 0, "share": 0.0},
+        "Trung tính": {"count": 0, "share": 0.0},
+        "Tiêu cực": {"count": 0, "share": 0.0},
+    }
+    if not sentiment_totals.empty and {"Sentiment", "Messages"}.issubset(sentiment_totals.columns):
+        for _, row in sentiment_totals.iterrows():
+            label = chat_label(row["Sentiment"], CHAT_SENTIMENT_LABELS)
+            if label in values:
+                values[label] = {
+                    "count": int(row["Messages"]),
+                    "share": float(row.get("Share %", 0.0)),
+                }
+    dominant = max(values.items(), key=lambda item: item[1]["count"])[0] if values else "-"
+    negative_peak = {"time": "-", "count": 0, "share": 0.0, "total": 0}
+    if not timeline.empty and {"negative_count", "total_messages", "date_hour"}.issubset(timeline.columns):
+        work = timeline.copy()
+        work["negative_count"] = pd.to_numeric(work["negative_count"], errors="coerce").fillna(0)
+        work["total_messages"] = pd.to_numeric(work["total_messages"], errors="coerce").fillna(0)
+        if work["negative_count"].max() > 0:
+            peak = work.sort_values(["negative_count", "total_messages"], ascending=False).iloc[0]
+            total = float(peak.get("total_messages", 0))
+            negative = int(peak.get("negative_count", 0))
+            negative_peak = {
+                "time": chat_time_label(peak.get("date_hour")),
+                "count": negative,
+                "share": round(negative / total * 100, 1) if total else 0.0,
+                "total": int(total),
+            }
+    return {
+        "values": values,
+        "dominant": dominant,
+        "negative_peak": negative_peak,
+    }
+
+
+def make_chat_negative_peak_bar(timeline: pd.DataFrame):
+    if timeline.empty or not {"date_hour", "negative_count", "total_messages"}.issubset(timeline.columns):
+        return None
+    plot = timeline.copy()
+    for column in ["negative_count", "neutral_count", "positive_count", "total_messages"]:
+        if column not in plot.columns:
+            plot[column] = 0
+        plot[column] = pd.to_numeric(plot[column], errors="coerce").fillna(0)
+    plot = plot[plot["negative_count"] > 0].copy()
+    if plot.empty:
+        return None
+    plot["Khung thời gian"] = plot["date_hour"].apply(chat_time_label)
+    plot["Tỷ lệ tiêu cực (%)"] = np.where(
+        plot["total_messages"] > 0,
+        (plot["negative_count"] / plot["total_messages"] * 100).round(1),
+        0.0,
+    )
+    plot = plot.sort_values(["negative_count", "Tỷ lệ tiêu cực (%)"], ascending=False).head(8)
+    plot = plot.sort_values("negative_count", ascending=True)
+    fig = px.bar(
+        plot,
+        x="negative_count",
+        y="Khung thời gian",
+        orientation="h",
+        text="Tỷ lệ tiêu cực (%)",
+        color="Tỷ lệ tiêu cực (%)",
+        color_continuous_scale=[[0, THEME["gold"]], [1, THEME["danger"]]],
+        title="Khung thời gian có cảm xúc tiêu cực cao nhất",
+        labels={"negative_count": "Lượt tiêu cực"},
+        hover_data={
+            "total_messages": ":,",
+            "positive_count": ":,",
+            "neutral_count": ":,",
+            "negative_count": ":,",
+            "Tỷ lệ tiêu cực (%)": ":.1f",
+        },
+    )
+    fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside", cliponaxis=False)
+    fig.update_layout(xaxis_title="Lượt tiêu cực", yaxis_title="", coloraxis_colorbar_title="Tiêu cực (%)")
+    return board_chart_layout(fig, 390, left_margin=112, right_margin=62)
+
+
+def make_chat_peak_emotion_profile(timeline: pd.DataFrame):
+    if timeline.empty or not {"date_hour", "total_messages", "negative_count"}.issubset(timeline.columns):
+        return None
+    work = timeline.copy()
+    for column in ["positive_count", "neutral_count", "negative_count", "total_messages"]:
+        if column not in work.columns:
+            work[column] = 0
+        work[column] = pd.to_numeric(work[column], errors="coerce").fillna(0)
+    if work["negative_count"].max() <= 0:
+        return None
+    peak = work.sort_values(["negative_count", "total_messages"], ascending=False).iloc[0]
+    peak_total = float(peak["total_messages"])
+    overall_total = float(work["total_messages"].sum())
+    rows = []
+    labels = {
+        "positive_count": "Tích cực",
+        "neutral_count": "Trung tính",
+        "negative_count": "Tiêu cực",
+    }
+    for column, label in labels.items():
+        rows.append(
+            {
+                "Cảm xúc": label,
+                "Cao điểm tiêu cực": float(peak[column]) / peak_total * 100 if peak_total else 0.0,
+                "Toàn kỳ": float(work[column].sum()) / overall_total * 100 if overall_total else 0.0,
+            }
+        )
+    plot = pd.DataFrame(rows).melt(
+        id_vars="Cảm xúc",
+        value_vars=["Cao điểm tiêu cực", "Toàn kỳ"],
+        var_name="Phạm vi",
+        value_name="Tỷ lệ (%)",
+    )
+    plot["Tỷ lệ (%)"] = plot["Tỷ lệ (%)"].round(1)
+    fig = px.bar(
+        plot,
+        x="Tỷ lệ (%)",
+        y="Cảm xúc",
+        color="Phạm vi",
+        barmode="group",
+        orientation="h",
+        text="Tỷ lệ (%)",
+        title=f"Cơ cấu cảm xúc tại cao điểm {chat_time_label(peak['date_hour'])}",
+        color_discrete_map={"Cao điểm tiêu cực": THEME["danger"], "Toàn kỳ": THEME["muted"]},
+    )
+    fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside", cliponaxis=False)
+    fig.update_layout(xaxis_title="Tỷ lệ (%)", yaxis_title="", legend_title_text="")
+    fig.update_xaxes(range=[0, min(110, max(100, plot["Tỷ lệ (%)"].max() * 1.18))])
+    return board_chart_layout(fig, 390, left_margin=95, right_margin=62)
+
+
+def make_chat_selected_sentiment_trend(daily_timeline: pd.DataFrame, label: str):
+    column_by_label = {
+        "Tích cực": "positive_count",
+        "Trung tính": "neutral_count",
+        "Tiêu cực": "negative_count",
+    }
+    column = column_by_label.get(label)
+    if daily_timeline.empty or column not in daily_timeline.columns or "date" not in daily_timeline.columns:
+        return None
+    plot = daily_timeline[["date", column, "total_messages"]].copy()
+    plot[column] = pd.to_numeric(plot[column], errors="coerce").fillna(0)
+    plot["total_messages"] = pd.to_numeric(plot["total_messages"], errors="coerce").fillna(0)
+    plot["Tỷ lệ (%)"] = np.where(plot["total_messages"] > 0, (plot[column] / plot["total_messages"] * 100).round(1), 0.0)
+    fig = px.bar(
+        plot,
+        x="date",
+        y=column,
+        text="Tỷ lệ (%)",
+        title=f"{label} theo ngày",
+        labels={column: f"Lượt {label.lower()}", "date": "Ngày"},
+    )
+    fig.update_traces(
+        marker_color=CHAT_SENTIMENT_COLORS.get(label, THEME["primary"]),
+        texttemplate="%{text:.1f}%",
+        textposition="outside",
+        cliponaxis=False,
+    )
+    fig.update_xaxes(tickformat="%d/%m")
+    fig.update_yaxes(rangemode="tozero")
+    fig.update_layout(yaxis_title=f"Lượt {label.lower()}", showlegend=False)
+    return board_chart_layout(fig, 360, right_margin=48, bottom_margin=72)
+
+
+def chat_construct_emotion_metrics(detail: pd.DataFrame, selected_construct: str) -> Dict[str, object]:
+    selected = detail[detail["chat_construct"] == selected_construct].copy()
+    total_all = float(detail["count"].sum()) if not detail.empty else 0.0
+    total = int(selected["count"].sum()) if not selected.empty else 0
+    negative = int(selected["negative_count"].sum()) if not selected.empty else 0
+    peak_label = "-"
+    peak_negative = 0
+    if not selected.empty:
+        peak = selected.sort_values(["negative_count", "count"], ascending=False).iloc[0]
+        peak_label = chat_time_label(peak.get("date"), include_hour=False)
+        peak_negative = int(peak.get("negative_count", 0))
+    return {
+        "total": total,
+        "share": round(total / total_all * 100, 1) if total_all else 0.0,
+        "negative": negative,
+        "negative_rate": round(negative / total * 100, 1) if total else 0.0,
+        "peak_label": peak_label,
+        "peak_negative": peak_negative,
+    }
+
+
+def make_chat_construct_emotion_trend(detail: pd.DataFrame, selected_construct: str):
+    selected = detail[detail["chat_construct"] == selected_construct].copy()
+    if selected.empty:
+        return None
+    selected = selected.sort_values("date")
+    plot = selected[["date", "count", "negative_count"]].melt(
+        id_vars="date",
+        value_vars=["count", "negative_count"],
+        var_name="Chỉ số",
+        value_name="Lượt",
+    )
+    plot["Chỉ số"] = plot["Chỉ số"].map({"count": "Tổng lượt", "negative_count": "Cảm xúc tiêu cực"})
+    fig = px.line(
+        plot,
+        x="date",
+        y="Lượt",
+        color="Chỉ số",
+        markers=True,
+        title=f"Cảm xúc tiêu cực trong cụm: {selected_construct}",
+        color_discrete_map={"Tổng lượt": THEME["primary"], "Cảm xúc tiêu cực": THEME["danger"]},
+    )
+    fig.update_traces(line=dict(width=3), marker=dict(size=8))
+    fig.update_xaxes(tickformat="%d/%m", title_text="Ngày")
+    fig.update_yaxes(rangemode="tozero")
+    fig.update_layout(hovermode="x unified", yaxis_title="Lượt")
+    return board_chart_layout(fig, 370, right_margin=48, bottom_margin=72)
+
+
+def make_chat_construct_negative_rate(detail: pd.DataFrame, selected_construct: str):
+    selected = detail[detail["chat_construct"] == selected_construct].copy()
+    if selected.empty:
+        return None
+    selected = selected.sort_values("date")
+    selected["negative_rate"] = np.where(
+        selected["count"] > 0,
+        (selected["negative_count"] / selected["count"] * 100).round(1),
+        0.0,
+    )
+    fig = px.bar(
+        selected,
+        x="date",
+        y="negative_rate",
+        text="negative_rate",
+        title="Tỷ lệ tiêu cực theo ngày trong cụm",
+        labels={"date": "Ngày", "negative_rate": "Tỷ lệ tiêu cực (%)"},
+    )
+    fig.update_traces(marker_color=THEME["danger"], texttemplate="%{text:.1f}%", textposition="outside", cliponaxis=False)
+    fig.update_xaxes(tickformat="%d/%m")
+    fig.update_yaxes(rangemode="tozero")
+    fig.update_layout(showlegend=False, yaxis_title="Tỷ lệ tiêu cực (%)")
+    return board_chart_layout(fig, 370, right_margin=48, bottom_margin=72)
+
+
+def chat_construct_emotion_table(detail: pd.DataFrame, selected_construct: str) -> pd.DataFrame:
+    selected = detail[detail["chat_construct"] == selected_construct].copy()
+    if selected.empty:
+        return pd.DataFrame()
+    selected = selected.sort_values("date")
+    table = selected[["date", "count", "negative_count", "negative_rate"]].copy()
+    table["date"] = table["date"].dt.strftime("%d/%m/%Y")
+    return table.rename(
+        columns={
+            "date": "Ngày",
+            "count": "Tổng lượt",
+            "negative_count": "Cảm xúc tiêu cực",
+            "negative_rate": "Tỷ lệ tiêu cực (%)",
+        }
+    )
 
 
 def chat_distribution_value(distribution: pd.DataFrame, label_column: str, label_value: str) -> Tuple[int, float]:
@@ -4341,33 +5281,6 @@ def fallback_construct_from_topic(topic_totals: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-def build_chat_signal_score(
-    kpis: Dict[str, float],
-    risk_totals: pd.DataFrame,
-    sentiment_totals: pd.DataFrame,
-    construct_totals: pd.DataFrame,
-    timeline: pd.DataFrame,
-) -> pd.DataFrame:
-    total = max(int(kpis.get("total_messages", 0)), 1)
-    high_risk_count, high_risk_share = chat_distribution_value(risk_totals, "Risk level", "high")
-    harm_count, harm_share = chat_distribution_contains(construct_totals, "Cụm nội dung", r"nguy cơ|an toàn|bạo lực|tổn hại")
-    negative_count, negative_share = chat_distribution_value(sentiment_totals, "Sentiment", "negative")
-    rag_messages = int(round(float(kpis.get("rag_rate", 0.0)) * total))
-    peak_messages = int(timeline["total_messages"].max()) if not timeline.empty else 0
-    peak_share = peak_messages / total * 100
-
-    rows = [
-        ("Tin nhắn nguy cơ cao", high_risk_count, high_risk_share, "Ưu tiên an toàn"),
-        ("Nội dung gây hại", harm_count, harm_share, "Nội dung kéo mức nguy cơ"),
-        ("Cảm xúc tiêu cực", negative_count, negative_share, "Sắc thái căng thẳng"),
-        ("Câu trả lời dùng tài liệu", rag_messages, float(kpis.get("rag_rate", 0.0)) * 100, "Mức phụ thuộc tài liệu"),
-        ("Giờ cao điểm", peak_messages, peak_share, "Thời điểm hội thoại tập trung"),
-    ]
-    score = pd.DataFrame(rows, columns=["Tín hiệu", "Messages", "Chỉ số (%)", "Vai trò"])
-    score["Chỉ số (%)"] = score["Chỉ số (%)"].round(2)
-    return score.sort_values("Chỉ số (%)", ascending=False).reset_index(drop=True)
-
-
 def make_chat_construct_bar(construct_totals: pd.DataFrame):
     if construct_totals.empty or "Cụm nội dung" not in construct_totals.columns or "Messages" not in construct_totals.columns:
         return None
@@ -4387,6 +5300,202 @@ def make_chat_construct_bar(construct_totals: pd.DataFrame):
     fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside", cliponaxis=False)
     fig.update_layout(xaxis_title="Lượt chat", yaxis_title="", coloraxis_showscale=False)
     return board_chart_layout(fig, height, left_margin=190, right_margin=54)
+
+
+def make_chat_risk_distribution_bar(risk_totals: pd.DataFrame):
+    if risk_totals.empty or "Risk level" not in risk_totals.columns or "Messages" not in risk_totals.columns:
+        return None
+    plot = risk_totals.copy()
+    plot["Mức nguy cơ"] = plot["Risk level"].map(lambda value: chat_label(value, CHAT_RISK_LABELS))
+    plot["Share %"] = pd.to_numeric(plot.get("Share %", 0), errors="coerce").fillna(0)
+    plot["Messages"] = pd.to_numeric(plot["Messages"], errors="coerce").fillna(0)
+    order = ["Thấp", "Trung bình", "Cao", "Không rõ"]
+    plot["Mức nguy cơ"] = pd.Categorical(plot["Mức nguy cơ"], categories=order, ordered=True)
+    plot = plot.sort_values("Mức nguy cơ")
+    plot["Nhãn"] = plot.apply(lambda row: f"{int(row['Messages']):,} / {row['Share %']:.1f}%", axis=1)
+    fig = px.bar(
+        plot,
+        x="Mức nguy cơ",
+        y="Messages",
+        text="Nhãn",
+        color="Mức nguy cơ",
+        color_discrete_map=CHAT_RISK_COLORS,
+        title="Phân bố mức nguy cơ",
+        hover_data={"Messages": ":,", "Share %": ":.1f", "Nhãn": False},
+    )
+    fig.update_traces(textposition="outside", cliponaxis=False)
+    fig.update_layout(xaxis_title="", yaxis_title="Lượt chat", showlegend=False)
+    return board_chart_layout(fig, 365, right_margin=48, bottom_margin=72)
+
+
+def make_chat_high_risk_trend(frame: pd.DataFrame, x_column: str, title: str):
+    if frame.empty or x_column not in frame.columns or "high_risk_count" not in frame.columns:
+        return None
+    plot = frame[[x_column, "high_risk_count", "total_messages"]].copy()
+    plot["high_risk_count"] = pd.to_numeric(plot["high_risk_count"], errors="coerce").fillna(0)
+    plot["total_messages"] = pd.to_numeric(plot["total_messages"], errors="coerce").fillna(0)
+    plot["Tỷ lệ nguy cơ cao (%)"] = np.where(
+        plot["total_messages"] > 0,
+        (plot["high_risk_count"] / plot["total_messages"] * 100).round(1),
+        0.0,
+    )
+    fig = px.line(
+        plot,
+        x=x_column,
+        y="high_risk_count",
+        markers=True,
+        title=title,
+        labels={x_column: "", "high_risk_count": "Tin nhắn nguy cơ cao"},
+        hover_data={"Tỷ lệ nguy cơ cao (%)": ":.1f", "total_messages": ":,"},
+    )
+    fig.update_traces(line=dict(color=THEME["danger"], width=3), marker=dict(size=8))
+    if x_column == "date":
+        fig.update_xaxes(tickformat="%b %d", title_text="Ngày")
+    fig.update_layout(hovermode="x unified", showlegend=False, yaxis_title="Tin nhắn nguy cơ cao")
+    fig.update_yaxes(rangemode="tozero")
+    return board_chart_layout(fig, 365, right_margin=48, bottom_margin=72)
+
+
+def make_chat_high_risk_hour_bar(hourly: pd.DataFrame):
+    if hourly.empty or not {"hour_label", "high_risk_count"}.issubset(hourly.columns):
+        return None
+    plot = hourly.copy()
+    plot["high_risk_count"] = pd.to_numeric(plot["high_risk_count"], errors="coerce").fillna(0)
+    plot = plot[plot["high_risk_count"] > 0]
+    if plot.empty:
+        return None
+    fig = px.bar(
+        plot,
+        x="hour_label",
+        y="high_risk_count",
+        text="high_risk_count",
+        title="Tin nhắn nguy cơ cao theo giờ",
+        labels={"hour_label": "Giờ trong ngày", "high_risk_count": "Tin nhắn nguy cơ cao"},
+    )
+    fig.update_traces(marker_color=THEME["danger"], texttemplate="%{text:,}", textposition="outside", cliponaxis=False)
+    fig.update_xaxes(type="category", categoryorder="array", categoryarray=plot["hour_label"].tolist())
+    fig.update_layout(showlegend=False, yaxis_title="Tin nhắn nguy cơ cao")
+    fig.update_yaxes(rangemode="tozero")
+    return board_chart_layout(fig, 365, right_margin=48, bottom_margin=72)
+
+
+def make_chat_top_risky_categories(summary: pd.DataFrame, category_column: str, title: str):
+    if summary.empty or not {category_column, "high_risk_count"}.issubset(summary.columns):
+        return None
+    work = summary.copy()
+    if "count" not in work.columns:
+        work["count"] = work["high_risk_count"]
+    for column in ["count", "high_risk_count"]:
+        work[column] = pd.to_numeric(work[column], errors="coerce").fillna(0)
+    plot = (
+        work.groupby(category_column, as_index=False)[["count", "high_risk_count"]]
+        .sum()
+        .rename(columns={category_column: "Nhóm"})
+    )
+    if category_column == "topic":
+        plot["Nhóm"] = plot["Nhóm"].map(lambda value: chat_label(value, CHAT_TOPIC_LABELS))
+    plot = plot[plot["high_risk_count"] > 0].copy()
+    if plot.empty:
+        return None
+    plot["Tỷ lệ nguy cơ cao (%)"] = np.where(
+        plot["count"] > 0,
+        (plot["high_risk_count"] / plot["count"] * 100).round(1),
+        0.0,
+    )
+    plot = plot.sort_values(["high_risk_count", "Tỷ lệ nguy cơ cao (%)"], ascending=True).tail(8)
+    fig = px.bar(
+        plot,
+        x="high_risk_count",
+        y="Nhóm",
+        orientation="h",
+        text="Tỷ lệ nguy cơ cao (%)",
+        color="Tỷ lệ nguy cơ cao (%)",
+        color_continuous_scale=[[0, THEME["gold"]], [1, THEME["danger"]]],
+        title=title,
+        hover_data={"count": ":,", "high_risk_count": ":,", "Tỷ lệ nguy cơ cao (%)": ":.1f"},
+    )
+    fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside", cliponaxis=False)
+    fig.update_layout(xaxis_title="Tin nhắn nguy cơ cao", yaxis_title="", coloraxis_showscale=False)
+    return board_chart_layout(fig, 365, left_margin=180, right_margin=54)
+
+
+def make_chat_topic_distribution(topic_totals: pd.DataFrame):
+    if topic_totals.empty or "Topic" not in topic_totals.columns or "Messages" not in topic_totals.columns:
+        return None
+    plot = topic_totals.sort_values("Messages", ascending=True).tail(10).copy()
+    plot["Chủ đề"] = plot["Topic"].map(lambda value: chat_label(value, CHAT_TOPIC_LABELS))
+    plot["Share %"] = pd.to_numeric(plot.get("Share %", 0), errors="coerce").fillna(0)
+    fig = px.bar(
+        plot,
+        x="Messages",
+        y="Chủ đề",
+        orientation="h",
+        text="Share %",
+        color="Share %",
+        color_continuous_scale=[[0, THEME["primary_soft"]], [0.6, THEME["teal"]], [1, THEME["primary"]]],
+        title="Nhóm chủ đề tư vấn tâm lý được hỏi nhiều nhất",
+        hover_data={"Messages": ":,", "Share %": ":.1f"},
+    )
+    fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside", cliponaxis=False)
+    fig.update_layout(xaxis_title="Lượt chat", yaxis_title="", coloraxis_showscale=False)
+    return board_chart_layout(fig, 390, left_margin=150, right_margin=54)
+
+
+def make_chat_topic_trend(summary: pd.DataFrame):
+    if summary.empty or not {"date", "topic", "count"}.issubset(summary.columns):
+        return None
+    plot = summary.copy()
+    plot["date"] = pd.to_datetime(plot["date"], errors="coerce")
+    plot["count"] = pd.to_numeric(plot["count"], errors="coerce").fillna(0)
+    plot = plot.dropna(subset=["date", "topic"])
+    if plot.empty:
+        return None
+    top_topics = plot.groupby("topic")["count"].sum().sort_values(ascending=False).head(3).index.tolist()
+    plot = plot[plot["topic"].isin(top_topics)].sort_values(["date", "topic"])
+    if plot.empty:
+        return None
+    plot["Chủ đề"] = plot["topic"].map(lambda value: chat_label(value, CHAT_TOPIC_LABELS))
+    fig = px.line(
+        plot,
+        x="date",
+        y="count",
+        color="Chủ đề",
+        markers=True,
+        title="Ba nhóm chủ đề nổi bật theo ngày",
+        labels={"date": "Ngày", "count": "Lượt chat", "Chủ đề": "Chủ đề"},
+        color_discrete_sequence=PALETTE,
+    )
+    fig.update_traces(line=dict(width=3), marker=dict(size=8))
+    fig.update_xaxes(tickformat="%b %d")
+    fig.update_layout(hovermode="x unified", yaxis_title="Lượt chat")
+    fig.update_yaxes(rangemode="tozero")
+    return board_chart_layout(fig, 390, right_margin=48, bottom_margin=72)
+
+
+def make_chat_sentiment_distribution(sentiment_totals: pd.DataFrame):
+    if sentiment_totals.empty or "Sentiment" not in sentiment_totals.columns or "Messages" not in sentiment_totals.columns:
+        return None
+    plot = sentiment_totals.copy()
+    plot["Cảm xúc"] = plot["Sentiment"].map(lambda value: chat_label(value, CHAT_SENTIMENT_LABELS))
+    plot["Share %"] = pd.to_numeric(plot.get("Share %", 0), errors="coerce").fillna(0)
+    plot["Messages"] = pd.to_numeric(plot["Messages"], errors="coerce").fillna(0)
+    order = ["Tích cực", "Trung tính", "Tiêu cực", "Không rõ"]
+    plot["Cảm xúc"] = pd.Categorical(plot["Cảm xúc"], categories=order, ordered=True)
+    plot = plot.sort_values("Cảm xúc")
+    plot["Nhãn"] = plot.apply(lambda row: f"{int(row['Messages']):,} / {row['Share %']:.1f}%", axis=1)
+    fig = px.bar(
+        plot,
+        x="Cảm xúc",
+        y="Messages",
+        text="Nhãn",
+        color="Cảm xúc",
+        color_discrete_map=CHAT_SENTIMENT_COLORS,
+        title="Phân bố cảm xúc",
+        hover_data={"Messages": ":,", "Share %": ":.1f", "Nhãn": False},
+    )
+    fig.update_traces(textposition="outside", cliponaxis=False)
+    fig.update_layout(xaxis_title="", yaxis_title="Lượt chat", showlegend=False)
+    return board_chart_layout(fig, 365, right_margin=48, bottom_margin=72)
 
 
 def make_chat_donut(distribution: pd.DataFrame, label_column: str, title: str):
@@ -4420,26 +5529,6 @@ def make_chat_vertical_distribution(distribution: pd.DataFrame, label_column: st
     fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside", cliponaxis=False)
     fig.update_layout(xaxis_title="", yaxis_title="Lượt chat", showlegend=False)
     return board_chart_layout(fig, 360, right_margin=48, bottom_margin=78)
-
-
-def make_chat_horizontal_score(score: pd.DataFrame):
-    if score.empty:
-        return None
-    plot = score.sort_values("Chỉ số (%)", ascending=True).copy()
-    fig = px.bar(
-        plot,
-        x="Chỉ số (%)",
-        y="Tín hiệu",
-        orientation="h",
-        text="Chỉ số (%)",
-        color="Chỉ số (%)",
-        color_continuous_scale=["#15b8aa", "#ffc928", "#ef5350"],
-        hover_data={"Messages": True, "Vai trò": True, "Chỉ số (%)": ":.2f"},
-        title="Tín hiệu nào nổi bật nhất?",
-    )
-    fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside", cliponaxis=False)
-    fig.update_layout(xaxis_title="Tỷ lệ / mức tập trung (%)", yaxis_title="", coloraxis_showscale=False)
-    return board_chart_layout(fig, 405, left_margin=170, right_margin=54)
 
 
 def make_chat_date_stack(summary: pd.DataFrame, category_column: str, title: str):
@@ -4533,49 +5622,114 @@ def make_chat_hour_heatmap(timeline: pd.DataFrame):
     pivot = plot.pivot_table(index="date", columns="hour_label", values="total_messages", aggfunc="sum", fill_value=0)
     if pivot.empty:
         return None
+    text = pivot.astype(int).astype(str).mask(pivot.eq(0), "")
     fig = px.imshow(
         pivot,
-        text_auto=True,
+        text_auto=False,
         aspect="auto",
-        color_continuous_scale=["#eef7f6", "#15b8aa", "#ef5350"],
-        title="Mật độ lượt chat theo ngày/giờ",
+        color_continuous_scale=[[0, "#f7fbfd"], [0.35, THEME["teal_soft"]], [0.7, THEME["teal"]], [1, THEME["danger"]]],
+        title="Thời điểm phát sinh hội thoại",
         labels={"x": "Giờ", "y": "Ngày", "color": "Lượt chat"},
     )
+    fig.update_traces(text=text.values, texttemplate="%{text}", hovertemplate="Ngày=%{y}<br>Giờ=%{x}<br>Lượt chat=%{z}<extra></extra>")
     return board_chart_layout(fig, 405, left_margin=72, right_margin=38, bottom_margin=62)
 
 
-def render_chatbot_gold_section() -> None:
-    from dashboard_gcs_loader import get_dashboard_kpis
+def inject_chat_dashboard_css() -> None:
+    st.markdown(
+        f"""
+        <style>
+        .chat-kpi-card {{
+            background: #ffffff;
+            border: 1px solid {THEME["border"]};
+            border-left: 5px solid {THEME["primary"]};
+            border-radius: 8px;
+            padding: 0.92rem 0.96rem;
+            min-height: 116px;
+            margin-bottom: 1rem;
+            box-shadow: 0 10px 24px rgba(27, 39, 51, 0.06);
+        }}
+        .chat-kpi-card.warning {{
+            border-left-color: {THEME["danger"]};
+            background: linear-gradient(180deg, #ffffff 0%, {THEME["coral_soft"]} 145%);
+        }}
+        .chat-kpi-card.neutral {{
+            border-left-color: {THEME["muted"]};
+        }}
+        .chat-kpi-label {{
+            color: {THEME["muted"]};
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0;
+            margin-bottom: 0.38rem;
+        }}
+        .chat-kpi-value {{
+            color: {THEME["text"]};
+            font-size: 1.42rem;
+            font-weight: 800;
+            line-height: 1.16;
+            margin-bottom: 0.36rem;
+        }}
+        .chat-kpi-caption {{
+            color: {THEME["muted"]};
+            font-size: 0.82rem;
+            line-height: 1.28;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_chat_kpi_card(slot, label: str, value: str, caption: str = "", tone: str = "default") -> None:
+    class_name = "chat-kpi-card"
+    if tone in {"warning", "neutral"}:
+        class_name += f" {tone}"
+    slot.markdown(
+        f"""
+        <div class="{class_name}">
+            <div class="chat-kpi-label">{html.escape(label)}</div>
+            <div class="chat-kpi-value">{html.escape(value)}</div>
+            <div class="chat-kpi-caption">{html.escape(caption)}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def chat_audience_group_for_page(selected_page: str) -> str | None:
+    if selected_page == "Học sinh":
+        return "school"
+    if selected_page == "Sinh viên":
+        return "university"
+    return None
+
+
+def render_chatbot_gold_section(selected_page: str = "Tổng quan") -> None:
+    from dashboard_gcs_loader import filter_chat_gold_tables_by_audience, get_dashboard_kpis
+
+    inject_chat_dashboard_css()
 
     try:
-        gold_tables = load_cached_chatbot_gold_tables()
+        loaded_gold_tables = load_cached_chatbot_gold_tables()
     except Exception as exc:
         st.error(f"Không đọc được dữ liệu hội thoại đã xử lý: {exc}")
         return
 
+    audience_group = chat_audience_group_for_page(selected_page)
+    gold_tables = filter_chat_gold_tables_by_audience(loaded_gold_tables, audience_group)
     metrics = gold_tables.get("chat_hourly_metrics", pd.DataFrame())
     if metrics.empty:
-        st.warning("Chưa có số liệu hội thoại đã xử lý để hiển thị.")
+        if audience_group:
+            st.warning("Gold hội thoại chưa có đủ metadata độ tuổi/nhóm cho trang này.")
+        else:
+            st.warning("Chưa có số liệu hội thoại đã xử lý để hiển thị.")
         return
 
     kpis = get_dashboard_kpis(metrics)
     timeline = prepare_chat_timeline(metrics)
     daily_timeline = aggregate_chat_timeframe(timeline, "day")
-    monthly_timeline = aggregate_chat_timeframe(timeline, "month")
-    risk_totals = aggregate_chat_distribution(gold_tables.get("chat_risk_summary", pd.DataFrame()), "risk_level", "Risk level")
-    if risk_totals.empty:
-        risk_totals = pd.DataFrame(
-            {
-                "Risk level": ["high", "medium", "low"],
-                "Messages": [
-                    metrics["high_risk_count"].sum(),
-                    metrics["medium_risk_count"].sum(),
-                    metrics["low_risk_count"].sum(),
-                ],
-            }
-        )
-        total_risk = float(risk_totals["Messages"].sum())
-        risk_totals["Share %"] = np.where(total_risk > 0, (risk_totals["Messages"] / total_risk * 100).round(2), 0.0)
     sentiment_totals = aggregate_chat_distribution(
         gold_tables.get("chat_sentiment_summary", pd.DataFrame()),
         "sentiment",
@@ -4598,102 +5752,128 @@ def render_chatbot_gold_section() -> None:
             (sentiment_totals["Messages"] / total_sentiment * 100).round(2),
             0.0,
         )
-    topic_totals = aggregate_chat_distribution(gold_tables.get("chat_topic_summary", pd.DataFrame()), "topic", "Topic")
-    construct_totals = aggregate_chat_distribution(
-        gold_tables.get("chat_construct_summary", pd.DataFrame()),
-        "chat_construct",
-        "Cụm nội dung",
-    )
-    if construct_totals.empty:
-        construct_totals = fallback_construct_from_topic(topic_totals)
-    signal_score = build_chat_signal_score(kpis, risk_totals, sentiment_totals, construct_totals, timeline)
-    high_risk_rate = kpis["high_risk_count"] / kpis["total_messages"] * 100 if kpis["total_messages"] else 0.0
+    sentiment_info = chat_sentiment_summary_values(sentiment_totals, timeline)
+    sentiment_values = sentiment_info["values"]
+    negative_peak = sentiment_info["negative_peak"]
     negative_count, negative_rate = chat_distribution_value(sentiment_totals, "Sentiment", "negative")
-    peak_label = "-"
-    if not timeline.empty:
-        peak = timeline.sort_values("total_messages", ascending=False).iloc[0]
-        peak_label = f"{peak['date_hour']:%m-%d %H:00}"
+    construct_detail = prepare_chat_construct_detail(gold_tables.get("chat_construct_summary", pd.DataFrame()))
 
-    board_section("Tổng quan nhanh", "Quy mô hội thoại, mức nguy cơ, cảm xúc và thời điểm cao điểm.")
+    scope_title = "toàn bộ" if audience_group is None else selected_page.lower()
+    board_section(f"Tổng quan cảm xúc trong hội thoại tư vấn tâm lý - {scope_title}")
     kpi_cols = st.columns(5, gap="small")
-    kpi_cols[0].metric("Lượt chat", f"{kpis['total_messages']:,}")
-    kpi_cols[1].metric("Phiên chat", f"{kpis['unique_sessions']:,}")
-    kpi_cols[2].metric("Nguy cơ cao", f"{high_risk_rate:.1f}%", f"{kpis['high_risk_count']:,} lượt")
-    kpi_cols[3].metric("Cảm xúc tiêu cực", f"{negative_rate:.1f}%", f"{negative_count:,} lượt")
-    kpi_cols[4].metric("Giờ cao điểm", peak_label)
+    render_chat_kpi_card(kpi_cols[0], "Tổng lượt", f"{kpis['total_messages']:,}", "Hội thoại đã xử lý")
+    render_chat_kpi_card(kpi_cols[1], "Phiên", f"{kpis['unique_sessions']:,}", "Mã phiên ẩn danh")
+    render_chat_kpi_card(kpi_cols[2], "Cảm xúc chủ đạo", str(sentiment_info["dominant"]), "Nhóm cảm xúc nhiều nhất")
+    render_chat_kpi_card(
+        kpi_cols[3],
+        "Tiêu cực",
+        f"{chat_pct(negative_rate)} / {negative_count:,} lượt",
+        "Nhóm cần chú ý",
+        tone="warning",
+    )
+    render_chat_kpi_card(
+        kpi_cols[4],
+        "Cao điểm tiêu cực",
+        f"{negative_peak['time']} / {negative_peak['count']:,} lượt",
+        f"{negative_peak['share']:.1f}% trong khung đó",
+        tone="warning",
+    )
 
-    first_row = st.columns([1.55, 1.0], gap="small")
-    with first_row[0]:
-        fig = make_chat_volume_line(timeline, "date_hour", "Theo giờ: tổng lượt, dùng tài liệu, nguy cơ cao, tiêu cực")
-        if fig is not None:
-            st.plotly_chart(fig, width="stretch", config=PLOT_CONFIG, key="gold_chat_hourly_line_board")
-    with first_row[1]:
-        heatmap = make_chat_hour_heatmap(timeline)
-        if heatmap is not None:
-            st.plotly_chart(heatmap, width="stretch", config=PLOT_CONFIG, key="gold_chat_hour_heatmap")
+    board_section("Cao điểm cảm xúc tiêu cực")
+    peak_row = st.columns(2, gap="small")
+    with peak_row[0]:
+        peak_profile = make_chat_peak_emotion_profile(timeline)
+        if peak_profile is not None:
+            st.plotly_chart(peak_profile, width="stretch", config=PLOT_CONFIG, key="chat_peak_emotion_profile")
+    with peak_row[1]:
+        negative_peak_fig = make_chat_negative_peak_bar(timeline)
+        if negative_peak_fig is not None:
+            st.plotly_chart(negative_peak_fig, width="stretch", config=PLOT_CONFIG, key="chat_negative_peak_bar")
 
-    board_section("Cụm nội dung hội thoại", "Phân loại trực tiếp từ nội dung câu hỏi đã làm sạch trong Silver chat.")
-    construct_row = st.columns([1.2, 1.0], gap="small")
-    with construct_row[0]:
-        construct_fig = make_chat_construct_bar(construct_totals)
-        if construct_fig is not None:
-            st.plotly_chart(construct_fig, width="stretch", config=PLOT_CONFIG, key="gold_chat_construct_bar")
-    with construct_row[1]:
-        construct_bubble = make_chat_construct_bubble(gold_tables.get("chat_construct_summary", pd.DataFrame()))
-        if construct_bubble is not None:
-            st.plotly_chart(construct_bubble, width="stretch", config=PLOT_CONFIG, key="gold_chat_construct_by_date")
-
-    board_section("Mức nguy cơ và cảm xúc", "Hai lát cắt tổng hợp giúp đọc nhanh trạng thái hội thoại.")
-    core_row = st.columns(2, gap="small")
-    with core_row[0]:
-        risk_fig = make_chat_donut(risk_totals, "Risk level", "Mức nguy cơ")
-        if risk_fig is not None:
-            st.plotly_chart(risk_fig, width="stretch", config=PLOT_CONFIG, key="gold_chat_risk_donut")
-    with core_row[1]:
-        sentiment_fig = make_chat_vertical_distribution(sentiment_totals, "Sentiment", "Cảm xúc")
-        if sentiment_fig is not None:
-            st.plotly_chart(sentiment_fig, width="stretch", config=PLOT_CONFIG, key="gold_chat_sentiment_bar")
-
-    board_section("Xu hướng theo thời gian", "Theo dõi lượt chat và tín hiệu rủi ro thay đổi theo ngày/tháng.")
+    board_section("Diễn biến cảm xúc")
     trend_row = st.columns(2, gap="small")
     with trend_row[0]:
-        fig = make_chat_volume_line(daily_timeline, "date", "Theo ngày: tổng lượt, dùng tài liệu, nguy cơ cao, tiêu cực")
-        if fig is not None:
-            st.plotly_chart(fig, width="stretch", config=PLOT_CONFIG, key="gold_chat_daily_line_board")
+        sentiment_fig = make_chat_sentiment_distribution(sentiment_totals)
+        if sentiment_fig is not None:
+            st.plotly_chart(sentiment_fig, width="stretch", config=PLOT_CONFIG, key="chat_sentiment_distribution")
     with trend_row[1]:
-        fig = make_chat_volume_line(monthly_timeline, "month", "Theo tháng: tổng lượt, dùng tài liệu, nguy cơ cao, tiêu cực")
-        if fig is not None:
-            st.plotly_chart(fig, width="stretch", config=PLOT_CONFIG, key="gold_chat_monthly_line_board")
+        sentiment_line = make_chat_sentiment_line(daily_timeline, "date", "Cảm xúc theo ngày")
+        if sentiment_line is not None:
+            st.plotly_chart(sentiment_line, width="stretch", config=PLOT_CONFIG, key="chat_sentiment_daily_line")
 
-    board_section("Tín hiệu nổi bật", "Xếp hạng yếu tố đáng chú ý và phân bố mức nguy cơ theo ngày.")
-    driver_row = st.columns([1.15, 1.0], gap="small")
-    with driver_row[0]:
-        score_fig = make_chat_horizontal_score(signal_score)
-        if score_fig is not None:
-            st.plotly_chart(score_fig, width="stretch", config=PLOT_CONFIG, key="gold_chat_signal_score")
-    with driver_row[1]:
-        risk_stack = make_chat_date_stack(gold_tables.get("chat_risk_summary", pd.DataFrame()), "risk_level", "Mức nguy cơ theo ngày")
-        if risk_stack is not None:
-            st.plotly_chart(risk_stack, width="stretch", config=PLOT_CONFIG, key="gold_chat_risk_by_date")
+    board_section("Xem riêng từng nhóm cảm xúc")
+    selected_sentiment = st.selectbox(
+        "Chọn cảm xúc",
+        ["Tiêu cực", "Trung tính", "Tích cực"],
+        key="chat_sentiment_detail_selector",
+    )
+    selected_values = sentiment_values.get(selected_sentiment, {"count": 0, "share": 0.0})
+    detail_cols = st.columns(3, gap="small")
+    render_chat_kpi_card(detail_cols[0], "Số lượt", f"{int(selected_values['count']):,}", f"Chiếm {selected_values['share']:.1f}%")
+    selected_trend = make_chat_selected_sentiment_trend(daily_timeline, selected_sentiment)
+    if selected_trend is not None:
+        selected_daily = daily_timeline.copy()
+        column = {"Tích cực": "positive_count", "Trung tính": "neutral_count", "Tiêu cực": "negative_count"}[selected_sentiment]
+        peak_day = selected_daily.sort_values(column, ascending=False).iloc[0]
+        render_chat_kpi_card(detail_cols[1], "Ngày cao nhất", chat_time_label(peak_day["date"], include_hour=False), f"{int(peak_day[column]):,} lượt")
+        render_chat_kpi_card(detail_cols[2], "Tổng hội thoại ngày đó", f"{int(peak_day['total_messages']):,}", "Để so sánh quy mô")
+        st.plotly_chart(selected_trend, width="stretch", config=PLOT_CONFIG, key="chat_selected_sentiment_trend")
 
-    board_section("Bảng số liệu tóm tắt", "Dùng để đối chiếu nhanh tổng phân phối trên các biểu đồ.")
-    check_cols = st.columns(3, gap="small")
-    check_cols[0].metric("Tổng theo nguy cơ", f"{int(risk_totals['Messages'].sum()):,}")
-    check_cols[1].metric("Tổng theo cảm xúc", f"{int(sentiment_totals['Messages'].sum()):,}")
-    check_cols[2].metric("Tổng theo cụm nội dung", f"{int(construct_totals['Messages'].sum()):,}")
+    board_section("Lọc cảm xúc theo cụm log")
+    construct_options = chat_construct_options(construct_detail)
+    if construct_options:
+        selected_construct = st.selectbox(
+            "Chọn cụm log",
+            construct_options,
+            key="chat_emotion_construct_selector",
+        )
+        construct_metrics = chat_construct_emotion_metrics(construct_detail, selected_construct)
+        construct_cols = st.columns(4, gap="small")
+        render_chat_kpi_card(
+            construct_cols[0],
+            "Tổng lượt trong cụm",
+            f"{construct_metrics['total']:,}",
+            f"Chiếm {construct_metrics['share']:.1f}% tổng hội thoại",
+        )
+        render_chat_kpi_card(
+            construct_cols[1],
+            "Tiêu cực trong cụm",
+            f"{construct_metrics['negative_rate']:.1f}% / {construct_metrics['negative']:,} lượt",
+            "Tỷ lệ cảm xúc tiêu cực",
+            tone="warning" if int(construct_metrics["negative"]) > 0 else "neutral",
+        )
+        render_chat_kpi_card(
+            construct_cols[2],
+            "Ngày tiêu cực cao nhất",
+            f"{construct_metrics['peak_label']}",
+            f"{construct_metrics['peak_negative']:,} lượt tiêu cực",
+            tone="warning" if int(construct_metrics["peak_negative"]) > 0 else "neutral",
+        )
+        render_chat_kpi_card(
+            construct_cols[3],
+            "Cụm đang xem",
+            selected_construct,
+            "Lọc từ log hội thoại đã xử lý",
+        )
+        construct_row = st.columns(2, gap="small")
+        with construct_row[0]:
+            construct_trend = make_chat_construct_emotion_trend(construct_detail, selected_construct)
+            if construct_trend is not None:
+                st.plotly_chart(construct_trend, width="stretch", config=PLOT_CONFIG, key="chat_construct_emotion_trend")
+        with construct_row[1]:
+            construct_rate = make_chat_construct_negative_rate(construct_detail, selected_construct)
+            if construct_rate is not None:
+                st.plotly_chart(construct_rate, width="stretch", config=PLOT_CONFIG, key="chat_construct_negative_rate")
+        with st.expander("Bảng theo ngày của cụm đang chọn", expanded=False):
+            st.dataframe(
+                chat_construct_emotion_table(construct_detail, selected_construct),
+                width="stretch",
+                hide_index=True,
+                height=220,
+            )
+    else:
+        chart_note("Chưa có số liệu cụm log để lọc cảm xúc.")
 
-    with st.expander("Bảng số liệu chi tiết", expanded=False):
-        table_tabs = st.tabs(["Theo giờ", "Cụm nội dung", "Nguy cơ", "Cảm xúc", "Tín hiệu"])
-        with table_tabs[0]:
-            st.dataframe(metrics, use_container_width=True, hide_index=True, height=250)
-        with table_tabs[1]:
-            st.dataframe(construct_totals, use_container_width=True, hide_index=True, height=260)
-        with table_tabs[2]:
-            st.dataframe(risk_totals, use_container_width=True, hide_index=True, height=220)
-        with table_tabs[3]:
-            st.dataframe(sentiment_totals, use_container_width=True, hide_index=True, height=220)
-        with table_tabs[4]:
-            st.dataframe(signal_score, use_container_width=True, hide_index=True, height=260)
 
 
 FOCUSED_SCOPE_OPTIONS = {
@@ -5111,6 +6291,17 @@ def board_college_undergraduate_years_only(df: pd.DataFrame) -> pd.DataFrame:
     undergraduate_years = {"Năm 1", "Năm 2", "Năm 3", "Năm 4+"}
     college_row = df[POPULATION_COLUMN] == HMS_POPULATION_LABEL
     include = ~college_row | labels.isin(undergraduate_years)
+    return df.loc[include].copy()
+
+
+def board_college_undergraduate_ages_only(df: pd.DataFrame) -> pd.DataFrame:
+    """Keep college rows in undergraduate age bands for overview age comparisons."""
+    age_col = find_q_col(df, 1)
+    if df.empty or age_col is None or POPULATION_COLUMN not in df.columns:
+        return df
+    labels = df[age_col].apply(lambda value: value_to_label(value, 1))
+    college_row = df[POPULATION_COLUMN] == HMS_POPULATION_LABEL
+    include = ~college_row | labels.isin(BOARD_COLLEGE_UNDERGRAD_AGE_LABELS)
     return df.loc[include].copy()
 
 
@@ -6501,10 +7692,6 @@ def render_executive_board(
             "PHÂN TÍCH NGUY CƠ | SINH VIÊN",
             "Cụm khảo sát chi tiết, năm học, độ tuổi và xu hướng theo năm",
         ),
-        "Chat logs": (
-            "CHATBOT LOG ANALYTICS",
-            "Xu hướng hội thoại, chủ đề, cảm xúc và mức nguy cơ",
-        ),
     }
     heading, subtitle = heading_by_page.get(selected_page, heading_by_page["Tổng quan"])
     st.markdown(
@@ -6516,19 +7703,17 @@ def render_executive_board(
         """,
         unsafe_allow_html=True,
     )
-    if selected_page == "Chat logs":
-        render_chatbot_gold_section()
-        return
-
     if filtered_raw.empty:
         st.warning("Không có bản ghi phù hợp với bộ lọc hiện tại.")
         return
 
     if selected_page == "Học sinh":
         render_school_detail_board(filtered_raw, filtered_cleaned, processed)
+        render_chatbot_gold_section(selected_page)
         return
     if selected_page == "Sinh viên":
         render_college_detail_board(filtered_raw, filtered_cleaned)
+        render_chatbot_gold_section(selected_page)
         return
 
     board_section("Tổng quan nhanh", "Quy mô mẫu, tỷ lệ nguy cơ toàn bộ và nhóm có tỷ lệ cao hơn.")
@@ -6553,7 +7738,7 @@ def render_executive_board(
 
     cards = st.columns(5, gap="small")
     cards[0].metric("Tổng số bản ghi", f"{total:,}")
-    cards[1].metric("Tỷ lệ nguy cơ toàn bộ", f"{risk_rate:.2f}%")
+    cards[1].metric("Tỷ lệ nguy cơ toàn bộ", f"{risk_rate:.3f}%")
     cards[2].metric("Số học sinh", f"{school_n:,}")
     cards[3].metric("Số sinh viên", f"{college_n:,}")
     cards[4].metric("Nhóm có nguy cơ cao hơn", higher_group, f"{higher_delta:.2f} điểm %")
@@ -6565,7 +7750,7 @@ def render_executive_board(
             go.Indicator(
                 mode="gauge+number",
                 value=risk_rate,
-                number={"suffix": "%", "font": {"size": 34}},
+                number={"suffix": "%", "valueformat": ".3f", "font": {"size": 34}},
                 gauge={
                     "axis": {"range": [0, 100], "ticksuffix": "%"},
                     "bar": {"color": "#ef5350", "thickness": 0.28},
@@ -6650,9 +7835,11 @@ def render_executive_board(
             key="board_construct_compare",
         )
 
+    overview_age_raw = board_college_undergraduate_ages_only(filtered_raw)
+    overview_age_cleaned = filtered_cleaned.loc[overview_age_raw.index].copy()
     overview_grade_raw = board_college_undergraduate_years_only(filtered_raw)
     overview_grade_cleaned = filtered_cleaned.loc[overview_grade_raw.index].copy()
-    age = board_group_rates(filtered_raw, 1, "Age")
+    age = board_group_rates(overview_age_raw, 1, "Age")
     grade = board_group_rates(overview_grade_raw, 3, "Grade")
     if not age.empty or not grade.empty:
         board_section("Phân bố theo nhóm", "So sánh tỷ lệ nguy cơ theo tuổi và lớp/năm học.")
@@ -6705,8 +7892,8 @@ def render_executive_board(
         )
         selected_label = BOARD_FACTOR_LABELS.get(selected_common_construct, selected_common_construct)
         overview_age_impact = board_overview_construct_impact_by_dimension(
-            filtered_raw,
-            filtered_cleaned,
+            overview_age_raw,
+            overview_age_cleaned,
             selected_common_construct,
             1,
             "Tuổi",
@@ -6737,13 +7924,11 @@ def render_executive_board(
             )
         chart_note("Mỗi dòng so sánh tỷ lệ nguy cơ giữa nhóm phản hồi mức thấp và mức cao.")
 
+    render_chatbot_gold_section(selected_page)
+
 def main() -> None:
     inject_css()
     selected_page = main_navigation()
-    if selected_page == "Chat logs":
-        inject_board_css()
-        render_executive_board(pd.DataFrame({"Target": []}), pd.DataFrame(), BoardPreparedData(pd.DataFrame(), pd.DataFrame()), selected_page)
-        return
 
     processed, source_text, source_shape, cache_status = load_data_ui()
 
@@ -6762,4 +7947,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

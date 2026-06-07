@@ -1,7 +1,8 @@
 """Bronze -> Silver survey cleaning job for Dataproc Serverless Spark.
 
 Scope:
-- Read only the four survey CSV files under bronze/survey_dataset.
+- Read the two reduced survey CSV files under bronze/survey_standardized.
+- Optionally read the app survey snapshot under bronze/app_survey_snapshot/survey_all.parquet.
 - Clean, normalize, validate, mask identifiers, and deduplicate records.
 - Write record-level Parquet only to silver/survey_cleaned.
 - Do not create dashboard metrics and do not write Gold.
@@ -25,16 +26,15 @@ from pyspark import StorageLevel
 
 PROJECT_ID = "student-mental-health-496205"
 BUCKET_NAME = "student-mental-health-lake-nhom1-2026"
-BRONZE_SURVEY_PATH = "gs://student-mental-health-lake-nhom1-2026/bronze/survey_dataset/"
+BRONZE_SURVEY_PATH = "gs://student-mental-health-lake-nhom1-2026/bronze/survey_standardized/"
+APP_SURVEY_SNAPSHOT_PATH = "gs://student-mental-health-lake-nhom1-2026/bronze/app_survey_snapshot/survey_all.parquet"
 SILVER_SURVEY_PATH = "gs://student-mental-health-lake-nhom1-2026/silver/survey_cleaned/"
 INVALID_SURVEY_PATH = "gs://student-mental-health-lake-nhom1-2026/silver/survey_cleaned_invalid/"
 WRITE_MODE = "overwrite"
 
 INPUT_SURVEY_FILES = [
-    "Mental School.csv",
-    "Mental University 1.csv",
-    "Mental University 2.csv",
-    "Mental University 3.csv",
+    "school_survey_standardized.csv",
+    "university_survey_standardized.csv",
 ]
 
 MISSING_STRINGS = {"", "na", "n/a", "null", "none", "unknown", "-", "--"}
@@ -249,15 +249,48 @@ DEDUP_METADATA_COLUMNS = {
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Clean Bronze survey CSV files into record-level Silver Parquet.")
     parser.add_argument("--input-path", default=BRONZE_SURVEY_PATH)
+    parser.add_argument("--app-snapshot-path", default=APP_SURVEY_SNAPSHOT_PATH)
+    parser.add_argument(
+        "--skip-app-snapshot",
+        dest="include_app_snapshot",
+        action="store_false",
+        help="Do not merge bronze/app_survey_snapshot/survey_all.parquet into Silver.",
+    )
+    parser.set_defaults(include_app_snapshot=True)
     parser.add_argument("--output-path", default=SILVER_SURVEY_PATH)
     parser.add_argument("--invalid-output-path", default=INVALID_SURVEY_PATH)
-    parser.add_argument("--output-partitions", type=int, default=8)
+    parser.add_argument("--output-partitions", type=int, default=4)
+    parser.add_argument("--spark-parallelism", type=int, default=8)
+    parser.add_argument("--shuffle-partitions", type=int, default=8)
+    parser.add_argument("--enable-quality-report", action="store_true", help="Run expensive schema/null/sample/group quality report.")
+    parser.add_argument("--enable-output-verify", action="store_true", help="Read output from GCS and count rows after write.")
+    parser.add_argument("--write-invalid-records", action="store_true", help="Write invalid/empty survey payload rows without a pre-count.")
+    parser.add_argument("--fast-mode", action="store_true", default=True, help="Production mode with minimal Spark actions. Enabled by default.")
+    parser.add_argument("--debug-mode", dest="fast_mode", action="store_false", help="Disable fast-mode shortcuts.")
+    parser.add_argument("--run-id", help="Optional run id for versioned Silver output.")
+    parser.add_argument("--versioned-output", action="store_true", help="Write to output_path/run_id=<run_id>/ instead of the root path.")
     parser.add_argument("--write-mode", default=WRITE_MODE, choices=["overwrite", "append", "errorifexists", "ignore"])
     return parser.parse_args()
 
 
 def print_json_log(payload: dict) -> None:
     print("JOB_JSON_LOG " + json.dumps(payload, default=str, sort_keys=True))
+
+
+def default_run_id() -> str:
+    return time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+
+
+def versioned_path(path: str, run_id: str, enabled: bool) -> str:
+    if not enabled:
+        return path
+    return f"{path.rstrip('/')}/run_id={run_id}/"
+
+
+def effective_write_mode(write_mode: str, versioned_output: bool) -> str:
+    if versioned_output and write_mode == "overwrite":
+        return "errorifexists"
+    return write_mode
 
 
 def normalize_column_name(name: str) -> str:
@@ -296,6 +329,17 @@ def expected_file_paths(spark: SparkSession, input_path: str) -> Dict[str, str]:
             missing.append(path)
 
     if missing:
+        discovered = {}
+        for status in filesystem.listStatus(jvm.org.apache.hadoop.fs.Path(input_path)):
+            path = status.getPath()
+            name = path.getName()
+            if name.lower().endswith(".csv"):
+                discovered[name] = path.toString()
+        if discovered:
+            print("Using discovered Bronze survey CSV files instead of legacy fixed filenames.")
+            for filename, path in sorted(discovered.items()):
+                print(f"  - {filename}: {path}")
+            return dict(sorted(discovered.items()))
         message = "\n".join(f"  - {path}" for path in missing)
         raise FileNotFoundError(f"Missing required survey Bronze CSV file(s):\n{message}")
 
@@ -303,6 +347,14 @@ def expected_file_paths(spark: SparkSession, input_path: str) -> Dict[str, str]:
     for filename, path in resolved.items():
         print(f"  - {filename}: {path}")
     return resolved
+
+
+def gcs_path_exists(spark: SparkSession, path: str) -> bool:
+    jvm = spark._jvm
+    conf = spark._jsc.hadoopConfiguration()
+    hadoop_path = jvm.org.apache.hadoop.fs.Path(path)
+    filesystem = hadoop_path.getFileSystem(conf)
+    return bool(filesystem.exists(hadoop_path))
 
 
 def source_group_from_name(filename: str):
@@ -343,6 +395,53 @@ def read_bronze_survey_csvs(spark: SparkSession, input_path: str) -> DataFrame:
     return combined
 
 
+def read_app_survey_snapshot(spark: SparkSession, snapshot_path: str) -> Optional[DataFrame]:
+    if not snapshot_path or not gcs_path_exists(spark, snapshot_path):
+        print(f"App survey snapshot not found, skipping: {snapshot_path}")
+        return None
+
+    frame = normalize_columns(spark.read.parquet(snapshot_path))
+    kept_columns = [column for column in frame.columns if should_keep_survey_column(column)]
+    if kept_columns:
+        frame = frame.select(*kept_columns)
+
+    frame = frame.select(*[F.col(column).cast("string").alias(column) for column in frame.columns])
+    frame = frame.withColumn("source_file", F.lit("app_survey_snapshot.parquet"))
+    if "source_group" in frame.columns:
+        frame = frame.withColumn("source_group", F.coalesce(F.col("source_group"), F.col("survey_type"), F.lit("unknown")))
+    elif "survey_type" in frame.columns:
+        frame = frame.withColumn("source_group", F.coalesce(F.col("survey_type"), F.lit("unknown")))
+    else:
+        frame = frame.withColumn("source_group", F.lit("unknown"))
+
+    if "source_dataset" in frame.columns:
+        frame = frame.withColumn("source_dataset", F.coalesce(F.col("source_dataset"), F.lit("app_survey_snapshot")))
+    else:
+        frame = frame.withColumn("source_dataset", F.lit("app_survey_snapshot"))
+    print(f"Including app survey snapshot: {snapshot_path}")
+    return frame
+
+
+def read_bronze_survey_inputs(
+    spark: SparkSession,
+    input_path: str,
+    app_snapshot_path: str,
+    include_app_snapshot: bool,
+) -> DataFrame:
+    frames = [read_bronze_survey_csvs(spark, input_path)]
+    if include_app_snapshot:
+        app_snapshot = read_app_survey_snapshot(spark, app_snapshot_path)
+        if app_snapshot is not None:
+            frames.append(app_snapshot)
+    else:
+        print("Skipping app survey snapshot because --skip-app-snapshot was set.")
+
+    combined = frames[0]
+    for frame in frames[1:]:
+        combined = combined.unionByName(frame, allowMissingColumns=True)
+    return combined
+
+
 def is_text_column(name: str) -> bool:
     lowered = name.lower()
     return any(token in lowered for token in TEXT_TOKENS)
@@ -359,7 +458,18 @@ def should_keep_survey_column(name: str) -> bool:
         return True
     if lowered in DASHBOARD_SCHOOL_Q_COLUMNS or lowered in DASHBOARD_HMS_COLUMNS:
         return True
-    if lowered in {"gender", "sex", "age", "grade", "source_file", "source_group", "source_dataset"}:
+    if lowered in {
+        "gender",
+        "sex",
+        "age",
+        "grade",
+        "learner_type",
+        "survey_type",
+        "schema_version",
+        "source_file",
+        "source_group",
+        "source_dataset",
+    }:
         return True
     return False
 
@@ -480,7 +590,7 @@ def parse_datetime_value(name: str):
     return parsed
 
 
-def add_date_metadata(df: DataFrame) -> Tuple[DataFrame, str]:
+def add_date_metadata(df: DataFrame, *, enable_date_parse_verify: bool = False) -> Tuple[DataFrame, List[str]]:
     result = df
     candidates = [name for name in result.columns if DATE_NAME_PATTERN.search(name)]
     parsed_dates = []
@@ -495,16 +605,19 @@ def add_date_metadata(df: DataFrame) -> Tuple[DataFrame, str]:
 
     if parsed_dates:
         result = result.withColumn("date", F.coalesce(*parsed_dates))
-        parsed_date_count = result.select(F.count(F.col("date")).alias("parsed_date_count")).first()["parsed_date_count"]
-        if not parsed_date_count:
+        if enable_date_parse_verify:
+            parsed_date_count = result.select(F.count(F.col("date")).alias("parsed_date_count")).first()["parsed_date_count"]
+        else:
+            parsed_date_count = None
+        if parsed_date_count == 0:
             print("WARNING: Date-like columns exist but no valid survey date was parsed; using ingestion_date partition.")
             result = result.drop("date").withColumn("ingestion_date", F.current_date())
-            return result, "ingestion_date"
+            return result, ["ingestion_date"]
         result = result.withColumn("year", F.year("date")).withColumn("month", F.month("date")).withColumn("day", F.dayofmonth("date"))
-        return result, "date"
+        return result, ["year", "month"]
 
     result = result.withColumn("ingestion_date", F.current_date())
-    return result, "ingestion_date"
+    return result, ["ingestion_date"]
 
 
 def protect_identifiers(df: DataFrame) -> DataFrame:
@@ -567,10 +680,13 @@ def deduplicate_by_payload_hash(df: DataFrame, columns: List[str]) -> DataFrame:
     if not columns:
         return df.dropDuplicates()
     if "anonymous_id" in df.columns and "source_file" in df.columns:
-        return df.dropDuplicates(["source_file", "anonymous_id"])
-    hash_columns = columns[:200]
-    payload_hash = F.xxhash64(*[F.coalesce(F.col(column).cast("string"), F.lit("<NULL>")) for column in hash_columns])
-    return df.withColumn("__payload_hash", payload_hash).dropDuplicates(["__payload_hash"]).drop("__payload_hash")
+        identified = df.where(F.col("anonymous_id").isNotNull()).dropDuplicates(["source_file", "anonymous_id"])
+        anonymous = df.where(F.col("anonymous_id").isNull())
+        return identified.unionByName(anonymous, allowMissingColumns=True)
+
+    # Standardized research CSV rows are anonymous respondents. Identical answer payloads can be
+    # valid different students, so payload-level dedup would collapse the dashboard population.
+    return df
 
 
 def data_quality_summary(
@@ -625,19 +741,36 @@ def data_quality_summary(
 
 def main() -> None:
     args = parse_args()
+    if not args.fast_mode:
+        args.enable_quality_report = True
+        args.enable_output_verify = True
+        args.write_invalid_records = True
+
     start_time = time.time()
+    run_id = args.run_id or default_run_id()
+    versioned_output = bool(args.versioned_output or args.run_id)
+    output_path = versioned_path(args.output_path, run_id, versioned_output)
+    write_mode = effective_write_mode(args.write_mode, versioned_output)
     spark = (
         SparkSession.builder.appName("survey-bronze-to-silver-cleaning")
-        .config("spark.sql.shuffle.partitions", "24")
-        .config("spark.default.parallelism", "24")
+        .config("spark.sql.shuffle.partitions", str(max(1, args.shuffle_partitions)))
+        .config("spark.default.parallelism", str(max(1, args.spark_parallelism)))
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
+        # The standardized survey union still has wide cleaning expressions. Disabling whole-stage
+        # codegen avoids Janino 64 KB generated-method fallbacks in Dataproc driver logs.
+        .config("spark.sql.codegen.wholeStage", "false")
         .getOrCreate()
     )
     spark.sparkContext.setLogLevel("WARN")
 
     try:
-        raw = read_bronze_survey_csvs(spark, args.input_path)
+        raw = read_bronze_survey_inputs(
+            spark,
+            args.input_path,
+            args.app_snapshot_path,
+            args.include_app_snapshot,
+        )
 
         survey_columns = [column for column in raw.columns if column not in {"source_file", "source_group", "source_dataset"}]
         bounded_non_empty_subset = survey_columns[:200]
@@ -648,19 +781,19 @@ def main() -> None:
         else:
             invalid_raw = build_invalid_empty_payload(raw, bounded_non_empty_subset)
             non_empty_raw = raw.limit(0)
-        invalid_rows = invalid_raw.count()
-        if invalid_rows > 0:
-            print(f"Writing invalid survey records to {args.invalid_output_path} with mode={args.write_mode}")
-            invalid_raw.write.mode(args.write_mode).parquet(args.invalid_output_path)
+        invalid_rows = "not_counted_for_speed"
+        if args.write_invalid_records:
+            print(f"Writing invalid survey records to {args.invalid_output_path} with mode={write_mode} without pre-count.")
+            invalid_raw.write.mode(write_mode).parquet(args.invalid_output_path)
         else:
-            print(f"No invalid survey records detected; invalid path not written: {args.invalid_output_path}")
+            print("Skipping invalid survey output in fast production mode. Use --write-invalid-records to write it.")
 
         cleaned = clean_string_columns(non_empty_raw)
         cleaned = clean_missing_numeric_columns(cleaned)
         cleaned, converted_numeric = cast_numeric_candidates(cleaned)
         cleaned = protect_identifiers(cleaned)
 
-        with_dates, partition_column = add_date_metadata(cleaned)
+        with_dates, partition_columns = add_date_metadata(cleaned, enable_date_parse_verify=args.enable_quality_report)
         dedup_payload = payload_columns(with_dates)
         cleaned = deduplicate_by_payload_hash(with_dates, dedup_payload)
 
@@ -671,34 +804,69 @@ def main() -> None:
             .withColumn("is_valid", F.lit(True))
         )
 
-        print(f"Writing Silver record-level Parquet only to {args.output_path} with mode={args.write_mode}")
-        print(f"Partition column: {partition_column}")
+        print(f"Writing Silver record-level Parquet only to {output_path} with mode={write_mode}")
+        print(f"Partition columns: {partition_columns}")
         output_partitions = max(1, args.output_partitions)
         print(f"Silver output partitions before partitionBy: {output_partitions}")
-        cleaned.repartition(output_partitions).write.mode(args.write_mode).partitionBy(partition_column).parquet(args.output_path)
+        print("Silver repartition strategy: hash partition by output partition columns before partitionBy.")
+        cleaned.repartition(output_partitions, *[F.col(column) for column in partition_columns]).write.mode(write_mode).partitionBy(*partition_columns).parquet(output_path)
         print("Silver output completed. This job did not write any Gold table.")
 
-        written = spark.read.parquet(args.output_path).persist(StorageLevel.MEMORY_AND_DISK)
-        raw_rows = raw.count()
-        clean_rows = written.count()
-        before_deduplicate = with_dates.count()
-        duplicate_rows = before_deduplicate - clean_rows
-        data_quality_summary(written, raw_rows, before_deduplicate, clean_rows, invalid_rows, duplicate_rows, converted_numeric)
+        raw_rows = "not_counted_for_speed"
+        before_deduplicate = "not_counted_for_speed"
+        duplicate_rows = "not_counted_for_speed"
+        output_rows = "not_counted_for_speed"
+        if args.enable_quality_report:
+            quality_frame = cleaned.persist(StorageLevel.MEMORY_AND_DISK)
+            try:
+                raw_rows = raw.count()
+                before_deduplicate = with_dates.count()
+                clean_rows = quality_frame.count()
+                invalid_rows = invalid_raw.count()
+                duplicate_rows = before_deduplicate - clean_rows
+                data_quality_summary(
+                    quality_frame,
+                    raw_rows,
+                    before_deduplicate,
+                    clean_rows,
+                    invalid_rows,
+                    duplicate_rows,
+                    converted_numeric,
+                )
+                output_rows = clean_rows
+            finally:
+                quality_frame.unpersist()
+        elif args.enable_output_verify:
+            output_rows = spark.read.parquet(output_path).count()
+
         print_json_log(
             {
                 "job_name": "survey_bronze_to_silver",
                 "project_id": PROJECT_ID,
                 "input_path": args.input_path,
-                "output_path": args.output_path,
+                "app_snapshot_path": args.app_snapshot_path,
+                "app_snapshot_included": args.include_app_snapshot,
+                "output_path": output_path,
                 "invalid_output_path": args.invalid_output_path,
-                "write_mode": args.write_mode,
+                "requested_write_mode": args.write_mode,
+                "effective_write_mode": write_mode,
+                "versioned_output": versioned_output,
+                "run_id": run_id,
+                "fast_mode": args.fast_mode,
+                "quality_report_enabled": args.enable_quality_report,
+                "output_verify_enabled": args.enable_output_verify,
+                "write_invalid_records": args.write_invalid_records,
                 "input_rows": raw_rows,
                 "valid_rows": before_deduplicate,
                 "invalid_rows": invalid_rows,
                 "duplicate_removed": duplicate_rows,
-                "output_rows": clean_rows,
+                "output_rows": output_rows,
                 "output_success": True,
-                "partition_column": partition_column,
+                "output_partitions": output_partitions,
+                "spark_parallelism": max(1, args.spark_parallelism),
+                "spark_shuffle_partitions": max(1, args.shuffle_partitions),
+                "partition_strategy": "hash_repartition_by_output_partition_columns",
+                "partition_columns": partition_columns,
                 "duration_seconds": round(time.time() - start_time, 2),
                 "status": "success",
             }
