@@ -3,8 +3,8 @@
 Scope:
 - Read only cleaned/anonymized chat records from Silver.
 - Build dashboard-ready aggregate metrics.
-- Preserve audience_group so dashboard pages can show Overview, School, and
-  University views from Gold without reading Bronze.
+- Preserve audience_group so dashboard pages can show Tổng quan, Học sinh, and
+  Sinh viên views from Gold without reading Bronze.
 - Keep production fast: no count/show/printSchema unless explicitly requested.
 """
 
@@ -30,6 +30,28 @@ GOLD_CHAT_MODEL_USAGE_PATH = "gs://student-mental-health-lake-nhom1-2026/gold/da
 GOLD_CHAT_SENTIMENT_SUMMARY_PATH = "gs://student-mental-health-lake-nhom1-2026/gold/sentiment_summary/chat_sentiment_summary/"
 WRITE_MODE = "overwrite"
 NOT_COUNTED = "not_counted_for_speed"
+SUMMARY_VALUE_LABELS = {
+    "risk_level": {
+        "low": "Thấp",
+        "medium": "Trung bình",
+        "high": "Cao",
+        "unknown": "Không rõ",
+    },
+    "sentiment": {
+        "positive": "Tích cực",
+        "neutral": "Trung tính",
+        "negative": "Tiêu cực",
+        "unknown": "Không rõ",
+    },
+    "topic": {
+        "rag_question": "Hỏi tài liệu / hỗ trợ học tập",
+        "harm_intent": "Nguy cơ gây hại người khác",
+        "self_harm": "Nguy cơ tự gây hại",
+        "mental_health": "Sức khỏe tinh thần",
+        "general": "Hỗ trợ chung",
+        "unknown": "Chưa xác định chủ đề",
+    },
+}
 
 CANONICAL_TABLES = [
     "hourly",
@@ -259,13 +281,15 @@ def build_hourly_metrics(df: DataFrame) -> DataFrame:
 
 def build_distribution(df: DataFrame, column_name: str, value_name: str) -> DataFrame:
     total_window = Window.partitionBy("date", "audience_group")
-    return (
+    result = (
         df.groupBy("date", "audience_group", F.col(column_name).cast("string").alias(value_name))
         .agg(F.count(F.lit(1)).alias("count"))
         .withColumn("__group_total", F.sum("count").over(total_window))
         .withColumn("percentage", safe_pct(F.col("count"), F.col("__group_total")))
         .drop("__group_total")
     )
+    labels = SUMMARY_VALUE_LABELS.get(column_name)
+    return result.replace(labels, subset=[value_name]) if labels else result
 
 
 def add_chat_construct(df: DataFrame) -> DataFrame:
@@ -278,23 +302,23 @@ def add_chat_construct(df: DataFrame) -> DataFrame:
             F.lit("Nguy cơ an toàn cấp cao"),
         )
         .when(
-            text.rlike(r"(abuse|assault|violence|violent|trauma|stalk|harass|rape|partner|hit|beaten|bully|bị\s*bạo\s*lực|xâm\s*hại)"),
+            text.rlike(r"(abuse|assault|violence|violent|trauma|stalk|harass|rape|partner|hit|beaten|bully|bị\s*bạo\s*lực|xâm\s*hại|bắt\s*nạt|quấy\s*rối|theo\s*dõi)"),
             F.lit("Sang chấn, bạo lực và tổn hại"),
         )
         .when(
-            text.rlike(r"(depress|depression|anxiety|panic|hopeless|sad|stress|stressed|mental|lonely|overwhelm|burnout|trầm\s*cảm|lo\s*âu|căng\s*thẳng)"),
+            text.rlike(r"(depress|depression|anxiety|panic|hopeless|sad|stress|stressed|mental|lonely|overwhelm|burnout|trầm\s*cảm|lo\s*âu|căng\s*thẳng|buồn|tuyệt\s*vọng|cô\s*đơn|kiệt\s*sức)"),
             F.lit("Tâm trạng, lo âu và trầm cảm"),
         )
         .when(
-            text.rlike(r"(exam|grade|study|school|college|university|class|homework|assignment|deadline|academic|fail|teacher|professor|học|thi|điểm|bài\s*tập)"),
+            text.rlike(r"(exam|grade|study|school|college|university|class|homework|assignment|deadline|academic|fail|teacher|professor|học|thi|điểm|bài\s*tập|hạn\s*nộp|trượt\s*môn)"),
             F.lit("Áp lực học tập và thành tích"),
         )
         .when(
-            text.rlike(r"(family|parent|mother|father|home|housing|money|financial|tuition|food|hungry|rent|job|work|gia\s*đình|tài\s*chính|tiền)"),
+            text.rlike(r"(family|parent|mother|father|home|housing|money|financial|tuition|food|hungry|rent|job|work|gia\s*đình|tài\s*chính|tiền|học\s*phí|nhà\s*ở|đói|việc\s*làm)"),
             F.lit("Gia đình, tài chính và nhu cầu cơ bản"),
         )
         .when(
-            text.rlike(r"(friend|relationship|belong|alone|isolat|unsafe|safe|campus|social|peer|breakup|bạn\s*bè|cô\s*đơn|an\s*toàn)"),
+            text.rlike(r"(friend|relationship|belong|alone|isolat|unsafe|safe|campus|social|peer|breakup|bạn\s*bè|cô\s*đơn|an\s*toàn|chia\s*tay|mối\s*quan\s*hệ|không\s*thuộc\s*về)"),
             F.lit("Gắn kết xã hội và an toàn môi trường"),
         )
         .when(
@@ -302,7 +326,7 @@ def add_chat_construct(df: DataFrame) -> DataFrame:
             F.lit("Rượu, thuốc lá và chất kích thích"),
         )
         .when(
-            text.rlike(r"(sleep|insomnia|tired|exhausted|exercise|eat|eating|breakfast|rest|ngủ|mệt|vận\s*động|ăn\s*uống)"),
+            text.rlike(r"(sleep|insomnia|tired|exhausted|exercise|eat|eating|breakfast|rest|ngủ|mệt|vận\s*động|ăn\s*uống|mất\s*ngủ|kiệt\s*sức|nghỉ\s*ngơi)"),
             F.lit("Thiếu ngủ, phục hồi và sinh hoạt"),
         )
         .otherwise(F.lit("Hỗ trợ chung / chưa rõ cụm"))

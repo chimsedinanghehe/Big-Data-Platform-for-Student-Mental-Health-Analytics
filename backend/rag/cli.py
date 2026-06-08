@@ -4,17 +4,17 @@ from backend.rag.service import answer_question
 
 
 def chat_loop():
-    print("\nChat mode started. Type /exit to return to menu.\n")
+    print("\nĐã bắt đầu chế độ trò chuyện. Nhập /exit để quay lại menu.\n")
     chat_history = []
 
     while True:
-        question = input("You: ").strip()
+        question = input("Bạn: ").strip()
 
         if not question:
             continue
 
         if question.lower() in ["/exit", "exit", "quit", "/quit"]:
-            print("Returning to main menu...\n")
+            print("Đang quay lại menu chính...\n")
             break
 
         try:
@@ -30,13 +30,13 @@ def chat_loop():
                 standalone_query = question
 
             if get_settings().debug_rag:
-                print(f"[debug] rewritten query: {standalone_query}")
+                print(f"[gỡ lỗi] truy vấn đã viết lại: {standalone_query}")
 
-            print("\nBot:")
+            print("\nTrợ lý:")
             print(answer)
 
             if sources:
-                print("\nSources:")
+                print("\nNguồn tham khảo:")
                 for source in sources:
                     print(f"- {source}")
 
@@ -46,31 +46,31 @@ def chat_loop():
             chat_history.append({"role": "assistant", "content": answer})
             chat_history = chat_history[-10:]
         except Exception as exc:
-            print(f"\nError: {exc}\n")
+            print(f"\nLỗi: {exc}\n")
 
 
 def main():
     print("=" * 50)
-    print("MENTAL HEALTH RAG SYSTEM")
+    print("HỆ THỐNG RAG HỖ TRỢ SỨC KHỎE TINH THẦN")
     print("=" * 50)
 
     while True:
-        print("\nOptions:")
-        print("1. Build RAG Index")
-        print("2. Start Chat")
-        print("3. Exit")
+        print("\nTùy chọn:")
+        print("1. Xây dựng chỉ mục RAG")
+        print("2. Bắt đầu trò chuyện")
+        print("3. Thoát")
 
-        choice = input("\nSelect option: ").strip()
+        choice = input("\nChọn tùy chọn: ").strip()
 
         if choice == "1":
             build_index()
         elif choice == "2":
             chat_loop()
         elif choice == "3":
-            print("\nExiting system...")
+            print("\nĐang thoát hệ thống...")
             break
         else:
-            print("\nInvalid option")
+            print("\nTùy chọn không hợp lệ")
 
 
 if __name__ == "__main__":

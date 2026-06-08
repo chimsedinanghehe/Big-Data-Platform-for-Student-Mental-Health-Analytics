@@ -15,6 +15,8 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY --chown=appuser:appuser backend /app/backend
+COPY --chown=appuser:appuser scripts/run_survey_snapshot_worker.py /app/scripts/run_survey_snapshot_worker.py
+COPY --chown=appuser:appuser scripts/deployment/production_health_check.py /app/scripts/deployment/production_health_check.py
 COPY --chown=appuser:appuser school_survey_questions_answers.txt university_survey_questions_answers.txt /app/
 
 EXPOSE 8000

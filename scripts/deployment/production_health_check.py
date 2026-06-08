@@ -7,14 +7,27 @@ import sys
 import urllib.request
 from datetime import UTC, datetime
 
-from google.cloud import storage
-
-
 PROJECT_ID = os.getenv("GCP_PROJECT_ID", "student-mental-health-496205")
 BUCKET = os.getenv("GCS_BUCKET_NAME") or os.getenv(
     "GCS_BUCKET",
     "student-mental-health-lake-nhom1-2026",
 )
+BACKEND_URL = os.getenv("HEALTH_BACKEND_URL", "http://127.0.0.1:18000")
+FRONTEND_URL = os.getenv("HEALTH_FRONTEND_URL", "http://127.0.0.1:18080/health")
+DASHBOARD_URL = os.getenv(
+    "HEALTH_DASHBOARD_URL",
+    "http://127.0.0.1:18501/dashboard/_stcore/health",
+)
+KAFKA_HOST = os.getenv("KAFKA_HEALTH_HOST", "127.0.0.1")
+KAFKA_PORT = int(os.getenv("KAFKA_LOCAL_PORT", "9092"))
+
+
+def env_enabled(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def skipped(reason: str) -> dict[str, object]:
+    return {"ok": True, "skipped": True, "reason": reason}
 
 
 def http_check(url: str, *, timeout: int = 20) -> dict[str, object]:
@@ -35,6 +48,8 @@ def tcp_check(host: str, port: int) -> dict[str, object]:
 
 def gcs_latest(prefix: str) -> dict[str, object]:
     try:
+        from google.cloud import storage
+
         client = storage.Client(project=PROJECT_ID)
         blobs = list(client.list_blobs(BUCKET, prefix=prefix))
         latest = max(blobs, key=lambda blob: blob.updated) if blobs else None
@@ -55,21 +70,36 @@ def gcs_latest(prefix: str) -> dict[str, object]:
 
 
 def main() -> int:
+    bigdata_enabled = env_enabled("BIGDATA_ENABLED")
     checks = {
-        "backend_health": http_check("http://127.0.0.1:8000/health", timeout=25),
-        "backend_readiness": http_check("http://127.0.0.1:8000/ready", timeout=30),
-        "frontend": http_check("http://127.0.0.1:5173"),
-        "dashboard": http_check("http://127.0.0.1:8501"),
-        "kafka_tunnel": tcp_check("127.0.0.1", 9092),
-        "survey_bronze": gcs_latest("bronze/app_survey_snapshot/"),
-        "chat_bronze": gcs_latest("bronze/chat_logs/"),
-        "survey_silver": gcs_latest("silver/survey_cleaned/"),
-        "chat_silver": gcs_latest("silver/anonymized_chat/"),
-        "survey_gold": gcs_latest("gold/dashboard_tables/survey_overview_summary/"),
-        "chat_gold": gcs_latest("gold/dashboard_tables/chat_hourly_metrics/"),
+        "backend_health": http_check(f"{BACKEND_URL}/health", timeout=25),
+        "backend_readiness": http_check(f"{BACKEND_URL}/ready", timeout=30),
+        "frontend": http_check(FRONTEND_URL),
+        "dashboard": http_check(DASHBOARD_URL),
     }
+
+    bigdata_checks = {
+        "kafka_tunnel": lambda: tcp_check(KAFKA_HOST, KAFKA_PORT),
+        "survey_bronze": lambda: gcs_latest("bronze/app_survey_snapshot/"),
+        "chat_bronze": lambda: gcs_latest("bronze/chat_logs/"),
+        "survey_silver": lambda: gcs_latest("silver/survey_cleaned/"),
+        "chat_silver": lambda: gcs_latest("silver/anonymized_chat/"),
+        "survey_gold": lambda: gcs_latest("gold/dashboard_tables/survey_overview_summary/"),
+        "chat_gold": lambda: gcs_latest("gold/dashboard_tables/chat_hourly_metrics/"),
+    }
+    if bigdata_enabled:
+        checks.update({name: check() for name, check in bigdata_checks.items()})
+    else:
+        checks.update(
+            {
+                name: skipped("BIGDATA_ENABLED is false")
+                for name in bigdata_checks
+            }
+        )
+
     payload = {
         "checked_at": datetime.now(UTC).isoformat(),
+        "bigdata_enabled": bigdata_enabled,
         "status": "healthy" if all(item.get("ok") for item in checks.values()) else "degraded",
         "checks": checks,
     }

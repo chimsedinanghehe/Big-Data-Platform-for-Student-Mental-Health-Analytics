@@ -2,14 +2,23 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
+from datetime import UTC, datetime
 from io import BytesIO
+from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
 import pandas as pd
 
+from dashboard_cache import atomic_pickle_dump, dashboard_cache_dir
 
-PROJECT_ID = "student-mental-health-496205"
-BUCKET_NAME = "student-mental-health-lake-nhom1-2026"
+
+PROJECT_ID = os.getenv("GCP_PROJECT_ID", "student-mental-health-496205")
+BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "student-mental-health-lake-nhom1-2026")
+CACHE_SCHEMA_VERSION = "chat_gold_cache_v1"
+GOLD_CHAT_CURRENT_MANIFEST = "gold/dashboard_tables/_manifests/chat_current.json"
 
 CHAT_GOLD_TABLE_PREFIXES = {
     "chat_hourly_metrics": "gold/dashboard_tables/chat_hourly_metrics/",
@@ -68,6 +77,76 @@ def read_parquet_blobs(blob_names: Iterable[str]) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True, sort=False)
 
 
+def scan_chat_gold_manifest(client) -> tuple[tuple[str, str, int, int], ...]:
+    entries = []
+    for table_name, prefix in CHAT_GOLD_TABLE_PREFIXES.items():
+        for blob in client.list_blobs(BUCKET_NAME, prefix=prefix):
+            if not blob.name.lower().endswith(".parquet") or int(blob.size or 0) <= 0:
+                continue
+            entries.append(
+                (
+                    table_name,
+                    blob.name,
+                    int(blob.generation or 0),
+                    int(blob.size or 0),
+                )
+            )
+    return tuple(sorted(entries))
+
+
+def update_chat_gold_current_manifest() -> tuple[tuple[str, str, int, int], ...]:
+    client = create_storage_client()
+    manifest = scan_chat_gold_manifest(client)
+    if not manifest:
+        raise RuntimeError("No Chat Gold Parquet files were found.")
+    payload = {
+        "schema_version": "chat_gold_manifest_v1",
+        "generated_at": datetime.now(UTC).isoformat(),
+        "tables": {
+            table_name: [
+                {"name": name, "generation": generation, "size": size}
+                for table, name, generation, size in manifest
+                if table == table_name
+            ]
+            for table_name in CHAT_GOLD_TABLE_PREFIXES
+        },
+    }
+    client.bucket(BUCKET_NAME).blob(GOLD_CHAT_CURRENT_MANIFEST).upload_from_string(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True),
+        content_type="application/json",
+    )
+    return manifest
+
+
+def chat_gold_manifest() -> tuple[tuple[str, str, int, int], ...]:
+    client = create_storage_client()
+    try:
+        manifest_blob = client.bucket(BUCKET_NAME).blob(GOLD_CHAT_CURRENT_MANIFEST)
+        if manifest_blob.exists():
+            payload = json.loads(manifest_blob.download_as_text())
+            entries = [
+                (
+                    table_name,
+                    str(entry["name"]),
+                    int(entry.get("generation") or 0),
+                    int(entry.get("size") or 0),
+                )
+                for table_name, table_entries in payload.get("tables", {}).items()
+                for entry in table_entries
+            ]
+            if entries:
+                return tuple(sorted(entries))
+    except Exception:
+        pass
+    return scan_chat_gold_manifest(client)
+
+
+def chat_gold_cache_path(manifest: tuple[tuple[str, str, int, int], ...]) -> Path:
+    signature = json.dumps(manifest, ensure_ascii=True, sort_keys=True)
+    token = hashlib.sha256(f"{CACHE_SCHEMA_VERSION}::{signature}".encode("utf-8")).hexdigest()[:24]
+    return dashboard_cache_dir() / f"gold_chat_{token}.pkl"
+
+
 def load_gold_table(prefix: str) -> pd.DataFrame:
     blob_names = list_parquet_blobs(prefix)
     if not blob_names:
@@ -76,11 +155,28 @@ def load_gold_table(prefix: str) -> pd.DataFrame:
 
 
 def load_chat_gold_tables() -> Dict[str, pd.DataFrame]:
+    manifest = chat_gold_manifest()
+    cache_path = chat_gold_cache_path(manifest)
+    if cache_path.exists():
+        try:
+            payload = pd.read_pickle(cache_path)
+            if (
+                payload.get("schema_version") == CACHE_SCHEMA_VERSION
+                and payload.get("manifest") == manifest
+            ):
+                return payload["tables"]
+        except (OSError, ValueError, EOFError, KeyError, AttributeError):
+            pass
+
+    names_by_table: Dict[str, List[str]] = {name: [] for name in CHAT_GOLD_TABLE_PREFIXES}
+    for table_name, blob_name, _generation, _size in manifest:
+        names_by_table[table_name].append(blob_name)
+
     tables: Dict[str, pd.DataFrame] = {}
     for table_name, prefix in CHAT_GOLD_TABLE_PREFIXES.items():
         gold_path = f"gs://{BUCKET_NAME}/{prefix}"
         try:
-            blob_names = list_parquet_blobs(prefix)
+            blob_names = names_by_table[table_name]
             if not blob_names:
                 raise FileNotFoundError(f"Missing Gold Parquet files under {gold_path}")
             frame = read_parquet_blobs(blob_names)
@@ -108,7 +204,17 @@ def load_chat_gold_tables() -> Dict[str, pd.DataFrame]:
                 }
             )
             tables[table_name] = frame
-    return normalize_chat_gold_tables(tables)
+    normalized = normalize_chat_gold_tables(tables)
+    atomic_pickle_dump(
+        {
+            "schema_version": CACHE_SCHEMA_VERSION,
+            "manifest": manifest,
+            "tables": normalized,
+        },
+        cache_path,
+        keep_glob="gold_chat_*.pkl",
+    )
+    return normalized
 
 
 def normalize_chat_gold_tables(tables: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:

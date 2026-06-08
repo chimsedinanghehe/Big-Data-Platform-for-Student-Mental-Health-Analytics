@@ -43,7 +43,7 @@ if ! docker compose version >/dev/null 2>&1; then
   chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 fi
 
-mkdir -p /opt/mindschool /var/www/certbot /etc/nginx/conf.d
+mkdir -p /opt/mindschool /var/www/certbot/.well-known/acme-challenge /etc/nginx/conf.d
 systemctl enable --now docker
 systemctl enable --now nginx
 
@@ -56,6 +56,20 @@ fi
 cp "$HTTP_ONLY_CONF" "$NGINX_AVAILABLE"
 nginx -t
 systemctl reload nginx
+
+challenge_token="mindschool-preflight-$(date +%s)-$$"
+challenge_file="/var/www/certbot/.well-known/acme-challenge/${challenge_token}"
+printf '%s\n' "$challenge_token" > "$challenge_file"
+
+for domain in "$APP_DOMAIN" "www.${APP_DOMAIN}"; do
+  if ! curl -fsS --max-time 20 "http://${domain}/.well-known/acme-challenge/${challenge_token}" \
+    | grep -Fxq "$challenge_token"; then
+    rm -f "$challenge_file"
+    echo "ACME preflight failed for ${domain}. Point DNS to this host and open inbound port 80 before retrying." >&2
+    exit 1
+  fi
+done
+rm -f "$challenge_file"
 
 certbot certonly \
   --webroot \
@@ -70,6 +84,16 @@ certbot certonly \
 cp "$HTTPS_CONF" "$NGINX_AVAILABLE"
 nginx -t
 systemctl reload nginx
+
+mkdir -p /etc/letsencrypt/renewal-hooks/deploy
+cat > /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh <<'EOF'
+#!/usr/bin/env sh
+set -eu
+nginx -t
+systemctl reload nginx
+EOF
+chmod +x /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+
 systemctl enable certbot.timer
 
 echo "Nginx and Certbot are configured for ${APP_DOMAIN}."

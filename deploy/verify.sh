@@ -1,16 +1,7 @@
-#!/usr/bin/env sh
-set -eu
+#!/usr/bin/env bash
+set -euo pipefail
 
-cd "$(dirname "$0")"
+APP_ROOT="${APP_ROOT:-/opt/mindschool/app}"
+domain="$(grep -E '^APP_DOMAIN=' "${APP_ROOT}/deploy/.env.production" | tail -n 1 | cut -d= -f2-)"
 
-[ -f .env.production ] || {
-  echo "Missing deploy/.env.production." >&2
-  exit 1
-}
-
-domain="$(grep -E '^APP_DOMAIN=' .env.production | tail -n 1 | cut -d= -f2-)"
-
-for path in / /health /ready /dashboard/_stcore/health; do
-  curl --fail --silent --show-error --max-time 20 "https://${domain}${path}" >/dev/null
-  echo "OK https://${domain}${path}"
-done
+"${APP_ROOT}/deploy/verify-host-network.sh" "$domain"

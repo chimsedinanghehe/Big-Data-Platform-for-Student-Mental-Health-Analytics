@@ -1,0 +1,61 @@
+services:
+  backend:
+    environment:
+      CHAT_KAFKA_ENABLED: "true"
+      KAFKA_BOOTSTRAP_SERVERS: 127.0.0.1:${KAFKA_LOCAL_PORT:-9092}
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/gcp_service_account
+      READINESS_REQUIRE_GCS: "true"
+      READINESS_REQUIRE_KAFKA: "true"
+    secrets:
+      - gcp_service_account
+
+  dashboard:
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/gcp_service_account
+    secrets:
+      - gcp_service_account
+
+  survey-snapshot-worker:
+    image: student-mental-health-platform-backend:latest
+    restart: unless-stopped
+    network_mode: host
+    stop_grace_period: 60s
+    env_file: .env.production
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:15432/${POSTGRES_DB}
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/gcp_service_account
+      SURVEY_KAFKA_ENABLED: "false"
+    secrets:
+      - gcp_service_account
+    depends_on:
+      backend:
+        condition: service_healthy
+    command:
+      [
+        "python",
+        "scripts/run_survey_snapshot_worker.py",
+        "--limit",
+        "${SURVEY_SNAPSHOT_BATCH_LIMIT:-100}",
+        "--poll-seconds",
+        "${SURVEY_SNAPSHOT_POLL_SECONDS:-60}",
+      ]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "from pathlib import Path; assert b'run_survey_snapshot_worker.py' in Path('/proc/1/cmdline').read_bytes()",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+
+secrets:
+  gcp_service_account:
+    file: ./secrets/gcp-service-account.json

@@ -139,5 +139,9 @@ submit_pyspark_batch:
         args:
           seconds: 30
         next: wait
+    - raise_on_error:
+        switch:
+          - condition: ${map.get(current_operation, "error") != null}
+            raise: ${current_operation.error}
     - finish:
         return: ${current_operation}

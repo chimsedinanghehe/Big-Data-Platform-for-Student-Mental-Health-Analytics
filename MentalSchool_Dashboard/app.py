@@ -15,6 +15,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
+from dashboard_cache import atomic_pickle_dump, dashboard_cache_dir
 from utils.dashboard_core import (
     CATEGORY_LABELS,
     DATA_SOURCE_COLUMN,
@@ -48,17 +49,18 @@ from utils.dashboard_core import (
     top_missing_questions,
     top_target_gap_questions,
     value_to_label,
+    values_to_labels,
 )
 
-APP_TITLE = "Student Mental Health Analytics Dashboard"
-PIPELINE_VERSION = "research_construct_dashboard_v12_correct_hms_family_direction"
+APP_TITLE = "Dashboard phân tích sức khỏe tinh thần học sinh sinh viên"
+PIPELINE_VERSION = "research_construct_dashboard_v14_integrated_vietnamese_chat"
 DEFAULT_DATA_PATHS = [Path("data/Mental School.csv"), Path("Mental School.csv")]
 DEFAULT_HMS_PATHS = [
     Path("data/HMS_2022-2023_PUBLIC_instchars.csv"),
     Path("data/HMS_2023-2024_PUBLIC_instchars.csv"),
     Path("data/HMS_2024-2025_PUBLIC_instchars.csv"),
 ]
-LOCAL_CACHE_DIR = Path("data/.dashboard_cache")
+LOCAL_CACHE_DIR = dashboard_cache_dir()
 GCS_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "student-mental-health-496205")
 GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "student-mental-health-lake-nhom1-2026")
 GOLD_SURVEY_FEATURE_PREFIX = "gold/dashboard_tables/survey_analytic_features/"
@@ -72,6 +74,21 @@ GOLD_SURVEY_TABLE_PREFIXES = {
 }
 REQUIRED_GOLD_SURVEY_TABLES = {"survey_analytic_features"}
 GOLD_SURVEY_CURRENT_MANIFEST = "gold/dashboard_tables/_manifests/survey_current.json"
+GOLD_SURVEY_PAGE_SCOPES = {
+    "Tổng quan": "overview",
+    "Học sinh": "school",
+    "Sinh viên": "university",
+}
+SOURCE_DATASET_LABELS = {
+    "app_survey_snapshot": "App MindSchool",
+    "app_survey_responses": "App MindSchool",
+    "school_survey_standardized": "Học sinh",
+    "university_survey_standardized": "Sinh viên",
+    "mental school": "Học sinh",
+    "school": "Học sinh",
+    "university": "Sinh viên",
+    "unknown": "Chưa xác định nguồn dữ liệu",
+}
 
 
 def create_gcs_storage_client():
@@ -1677,7 +1694,7 @@ def load_csv_from_bytes(file_bytes: bytes) -> pd.DataFrame:
         df = pd.read_csv(BytesIO(file_bytes), usecols=usecols, low_memory=False)
         return mark_source(df, "hms", "Uploaded HMS")
     df = pd.read_csv(BytesIO(file_bytes), low_memory=False)
-    return mark_source(df, "mental_school", "Uploaded Mental School")
+    return mark_source(df, "mental_school", "Dữ liệu học sinh đã tải lên")
 
 
 def read_csv_from_path_uncached(path: str) -> pd.DataFrame:
@@ -1733,10 +1750,20 @@ def processed_cache_path(signature: str, pipeline_version: str) -> Path:
     return LOCAL_CACHE_DIR / f"board_processed_{token}.pkl"
 
 
-def gold_survey_cache_path(manifest: Tuple[Tuple[str, str, int, int], ...]) -> Path:
+def source_dataset_label(value: object) -> str:
+    raw = str(value).strip()
+    if pd.isna(value) or raw.lower() in {"", "nan", "none"}:
+        return "Chưa xác định nguồn dữ liệu"
+    return SOURCE_DATASET_LABELS.get(raw.lower(), raw.replace("_", " ").strip())
+
+
+def gold_survey_cache_path(
+    manifest: Tuple[Tuple[str, str, int, int], ...],
+    scope: str = "overview",
+) -> Path:
     signature = json.dumps(manifest, ensure_ascii=True, sort_keys=True)
-    token = hashlib.sha256(f"{PIPELINE_VERSION}::gold::{signature}".encode("utf-8")).hexdigest()[:24]
-    return LOCAL_CACHE_DIR / f"gold_survey_{token}.pkl"
+    token = hashlib.sha256(f"{PIPELINE_VERSION}::gold::{scope}::{signature}".encode("utf-8")).hexdigest()[:24]
+    return LOCAL_CACHE_DIR / f"gold_survey_{scope}_{token}.pkl"
 
 
 @st.cache_resource(show_spinner="Đang nạp dữ liệu dashboard...")
@@ -1771,7 +1798,7 @@ def load_default_prepared_data(
     board_data = prepare_board_data(raw_df)
 
     LOCAL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    pd.to_pickle(
+    atomic_pickle_dump(
         {
             "signature": signature,
             "pipeline_version": pipeline_version,
@@ -1780,6 +1807,7 @@ def load_default_prepared_data(
             "cleaned": board_data.cleaned,
         },
         cache_path,
+        keep_glob="board_processed_*.pkl",
     )
     return board_data, source_shape, False
 
@@ -1792,7 +1820,7 @@ def blob_partition_value(blob_name: str, key: str) -> str:
     return ""
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def survey_gold_tables_manifest() -> Tuple[Tuple[Tuple[str, str, int, int], ...], str]:
     try:
         client = create_gcs_storage_client()
@@ -1920,6 +1948,7 @@ def normalize_gold_analytic_for_dashboard(gold: pd.DataFrame) -> pd.DataFrame:
             out[DATA_SOURCE_COLUMN] = out["source_file"].astype(str).str.replace(r"\.csv$", "", regex=True)
         else:
             out[DATA_SOURCE_COLUMN] = out["source_group"].astype(str)
+    out[DATA_SOURCE_COLUMN] = out[DATA_SOURCE_COLUMN].map(source_dataset_label)
     if "q1" not in out.columns and "age" in out.columns:
         age = pd.to_numeric(out["age"], errors="coerce")
         out["q1"] = np.select(
@@ -1981,21 +2010,91 @@ def partition_values_from_blob_name(blob_name: str) -> Dict[str, str]:
     return values
 
 
-@st.cache_resource(show_spinner="Đang nạp Gold survey dashboard tables từ Cloud Storage...")
+def scope_gold_survey_board_data(board_data: BoardPreparedData, scope: str) -> BoardPreparedData:
+    if scope == "overview":
+        return board_data
+    source_group = board_data.raw_analysis.get("source_group", pd.Series("", index=board_data.raw_analysis.index))
+    scoped_index = board_data.raw_analysis.index[source_group.astype(str).str.lower().eq(scope)]
+    return BoardPreparedData(
+        raw_analysis=board_data.raw_analysis.loc[scoped_index].copy(),
+        cleaned=board_data.cleaned.loc[scoped_index].copy(),
+        gold_tables=None,
+    )
+
+
+def write_gold_survey_cache(
+    manifest: Tuple[Tuple[str, str, int, int], ...],
+    scope: str,
+    board_data: BoardPreparedData,
+    status_text: str,
+) -> Path:
+    cache_path = gold_survey_cache_path(manifest, scope)
+    atomic_pickle_dump(
+        {
+            "manifest": manifest,
+            "scope": scope,
+            "pipeline_version": PIPELINE_VERSION,
+            "input_shape": tuple(board_data.raw_analysis.shape),
+            "gold_status": status_text,
+            "raw_analysis": board_data.raw_analysis,
+            "cleaned": board_data.cleaned,
+            "gold_tables": board_data.gold_tables,
+        },
+        cache_path,
+        keep_glob=f"gold_survey_{scope}_*.pkl",
+        keep_count=1,
+    )
+    if scope == "overview":
+        scoped_prefixes = tuple(f"gold_survey_{known_scope}_" for known_scope in ("overview", "school", "university"))
+        for legacy_cache in LOCAL_CACHE_DIR.glob("gold_survey_*.pkl"):
+            if not legacy_cache.name.startswith(scoped_prefixes):
+                legacy_cache.unlink(missing_ok=True)
+    return cache_path
+
+
+@st.cache_resource(max_entries=3, show_spinner="Đang nạp Gold survey dashboard tables từ Cloud Storage...")
 def load_gold_survey_prepared_data(
     manifest: Tuple[Tuple[str, str, int, int], ...],
+    scope: str = "overview",
 ) -> Tuple[BoardPreparedData, Tuple[int, int], str]:
-    cache_path = gold_survey_cache_path(manifest)
+    if scope not in {"overview", "school", "university"}:
+        raise ValueError(f"Phạm vi cache Survey Gold không hợp lệ: {scope}")
+    cache_path = gold_survey_cache_path(manifest, scope)
     if cache_path.exists():
         try:
             payload = pd.read_pickle(cache_path)
-            if payload.get("manifest") == manifest and payload.get("pipeline_version") == PIPELINE_VERSION:
+            if (
+                payload.get("manifest") == manifest
+                and payload.get("scope") == scope
+                and payload.get("pipeline_version") == PIPELINE_VERSION
+            ):
                 board_data = BoardPreparedData(
                     raw_analysis=payload["raw_analysis"],
                     cleaned=payload["cleaned"],
                     gold_tables=payload["gold_tables"],
                 )
                 return board_data, tuple(payload["input_shape"]), str(payload["gold_status"])
+        except (OSError, ValueError, EOFError, KeyError, AttributeError):
+            pass
+
+    overview_cache_path = gold_survey_cache_path(manifest, "overview")
+    if scope != "overview" and overview_cache_path.exists():
+        try:
+            payload = pd.read_pickle(overview_cache_path)
+            if (
+                payload.get("manifest") == manifest
+                and payload.get("scope") == "overview"
+                and payload.get("pipeline_version") == PIPELINE_VERSION
+            ):
+                overview_data = BoardPreparedData(
+                    raw_analysis=payload["raw_analysis"],
+                    cleaned=payload["cleaned"],
+                    gold_tables=None,
+                )
+                scoped_data = scope_gold_survey_board_data(overview_data, scope)
+                status_text = f"{payload['gold_status']} | phạm vi={scope}"
+                write_gold_survey_cache(manifest, scope, scoped_data, status_text)
+                return scoped_data, tuple(scoped_data.raw_analysis.shape), status_text
         except (OSError, ValueError, EOFError, KeyError, AttributeError):
             pass
 
@@ -2033,30 +2132,23 @@ def load_gold_survey_prepared_data(
         cleaned=gold[required].copy(),
         gold_tables=gold_tables,
     )
-    input_shape = tuple(gold.shape)
     status_text = gold_table_status(gold_tables)
-
-    LOCAL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    pd.to_pickle(
-        {
-            "manifest": manifest,
-            "pipeline_version": PIPELINE_VERSION,
-            "input_shape": input_shape,
-            "gold_status": status_text,
-            "raw_analysis": board_data.raw_analysis,
-            "cleaned": board_data.cleaned,
-            "gold_tables": board_data.gold_tables,
-        },
-        cache_path,
-    )
-    return board_data, input_shape, status_text
+    overview_data = board_data
+    write_gold_survey_cache(manifest, "overview", overview_data, status_text)
+    scoped_data = scope_gold_survey_board_data(overview_data, scope)
+    if scope != "overview":
+        scoped_status = f"{status_text} | phạm vi={scope}"
+        write_gold_survey_cache(manifest, scope, scoped_data, scoped_status)
+        status_text = scoped_status
+    return scoped_data, tuple(scoped_data.raw_analysis.shape), status_text
 
 
-def load_data_ui() -> Tuple[Optional[BoardPreparedData], str, Tuple[int, int], str]:
+def load_data_ui(selected_page: str = "Tổng quan") -> Tuple[Optional[BoardPreparedData], str, Tuple[int, int], str]:
     manifest, gold_error = survey_gold_tables_manifest()
     if manifest:
         try:
-            board_data, input_shape, gold_status = load_gold_survey_prepared_data(manifest)
+            scope = GOLD_SURVEY_PAGE_SCOPES.get(selected_page, "overview")
+            board_data, input_shape, gold_status = load_gold_survey_prepared_data(manifest, scope)
             return (
                 board_data,
                 "Gold survey dashboard tables từ Cloud Storage",
@@ -2078,7 +2170,7 @@ def options_from_q(df: pd.DataFrame, qnum: int) -> List[str]:
     col = find_q_col(df, qnum)
     if not col:
         return []
-    values = df[col].apply(lambda value: value_to_label(value, qnum)).drop_duplicates().tolist()
+    values = values_to_labels(df[col], qnum).drop_duplicates().tolist()
     values = [value for value in values if value != "Missing"]
     return sorted(values, key=str)
 
@@ -2113,7 +2205,7 @@ def hero() -> None:
         """
         <div class="hero">
             <div class="hero-pill">Học sinh & sinh viên • Dashboard phân tích</div>
-            <div class="hero-title">Student Mental Health Analytics</div>
+            <div class="hero-title">Phân tích sức khỏe tinh thần học sinh sinh viên</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -2469,7 +2561,7 @@ def demographic_construct_table(
         return pd.DataFrame(columns=[group_name, "Construct", "Mean score", "At Risk Rate", "n"])
 
     tmp = cleaned_df[score_cols + ["Target"]].copy()
-    tmp[group_name] = raw_df[col].apply(lambda value: value_to_label(value, qnum))
+    tmp[group_name] = values_to_labels(raw_df[col], qnum)
     tmp = tmp[tmp[group_name] != "Missing"].copy()
     long_df = tmp.melt(
         id_vars=[group_name, "Target"],
@@ -2514,7 +2606,7 @@ def demographic_mental_summary(
         return pd.DataFrame(columns=columns)
 
     tmp = cleaned_df[["Target"] + score_cols].copy()
-    tmp[group_name] = raw_df[col].apply(lambda value: value_to_label(value, qnum))
+    tmp[group_name] = values_to_labels(raw_df[col], qnum)
     tmp = tmp[tmp[group_name] != "Missing"].copy()
     if tmp.empty:
         return pd.DataFrame(columns=columns)
@@ -2587,7 +2679,7 @@ def group_construct_profile(
     col = find_q_col(raw_df, qnum)
     if col is None:
         return pd.DataFrame(columns=["Construct", "Selected group", "Overall", "Difference"])
-    labels = raw_df[col].apply(lambda value: value_to_label(value, qnum))
+    labels = values_to_labels(raw_df[col], qnum)
     selected_mask = labels == selected_group
     if not selected_mask.any():
         return pd.DataFrame(columns=["Construct", "Selected group", "Overall", "Difference"])
@@ -2651,7 +2743,7 @@ def group_source_response_patterns(
     if group_col is None or "Target" not in cleaned_df.columns:
         return pd.DataFrame(columns=columns)
 
-    group_labels = raw_df[group_col].apply(lambda value: value_to_label(value, group_qnum))
+    group_labels = values_to_labels(raw_df[group_col], group_qnum)
     selected_mask = group_labels == selected_group
     if not selected_mask.any():
         return pd.DataFrame(columns=columns)
@@ -2661,7 +2753,7 @@ def group_source_response_patterns(
         q_col = find_q_col(raw_df, qnum)
         if q_col is None:
             continue
-        question_labels = raw_df[q_col].apply(lambda value: value_to_label(value, qnum))
+        question_labels = values_to_labels(raw_df[q_col], qnum)
         tmp = pd.DataFrame(
             {
                 "Response": question_labels,
@@ -2736,6 +2828,9 @@ def render_table(df: pd.DataFrame, height: int | None = None) -> None:
     for col in ["Target", "Group", "Response", "Highest-risk response", "Lowest-risk response", "Gender", "Grade", "Age"]:
         if col in table_df.columns:
             table_df[col] = table_df[col].map(response_label)
+    for col in ["Data Source", DATA_SOURCE_COLUMN, "source_dataset", "source_file"]:
+        if col in table_df.columns:
+            table_df[col] = table_df[col].map(source_dataset_label)
     drop_cols = [
         col
         for col in ["question", "Question"]
@@ -2755,7 +2850,7 @@ def render_table(df: pd.DataFrame, height: int | None = None) -> None:
     for row in table_df.itertuples(index=False, name=None):
         row_cells = []
         for value in row:
-            display = "" if pd.isna(value) else html.escape(str(value))
+            display = "0" if pd.isna(value) or str(value).strip().lower() == "nan" else html.escape(str(value))
             row_cells.append(f"<td>{display}</td>")
         rows_html.append(f"<tr>{''.join(row_cells)}</tr>")
 
@@ -3000,7 +3095,7 @@ def make_missing_bar(missing_df: pd.DataFrame, height: int = 540):
         title="Yếu tố nào thiếu dữ liệu nhiều nhất?",
     )
     fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside", cliponaxis=False)
-    fig.update_layout(yaxis_title="", xaxis_title="Missing (%)", coloraxis_showscale=False)
+    fig.update_layout(yaxis_title="", xaxis_title="Tỷ lệ thiếu dữ liệu (%)", coloraxis_showscale=False)
     return style_figure(fig, height)
 
 
@@ -3038,7 +3133,7 @@ def make_cluster_coverage_bar(cluster_df: pd.DataFrame, height: int = 470):
         title="Nhóm chủ đề nào có dữ liệu đầy đủ hơn?",
     )
     fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside", cliponaxis=False)
-    fig.update_layout(yaxis_title="", xaxis_title="Coverage (%)", coloraxis_showscale=False)
+    fig.update_layout(yaxis_title="", xaxis_title="Độ phủ dữ liệu (%)", coloraxis_showscale=False)
     return style_figure(fig, height)
 
 
@@ -3058,7 +3153,7 @@ def make_cluster_gap_bar(gap_df: pd.DataFrame, height: int = 470):
         title="Nhóm chủ đề nào tạo khác biệt nguy cơ lớn hơn?",
     )
     fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside", cliponaxis=False)
-    fig.update_layout(yaxis_title="", xaxis_title="Average gap (%)", coloraxis_showscale=False)
+    fig.update_layout(yaxis_title="", xaxis_title="Chênh lệch nguy cơ trung bình (%)", coloraxis_showscale=False)
     return style_figure(fig, height)
 
 
@@ -3121,7 +3216,7 @@ def make_score_bin_rate(df: pd.DataFrame, score_col: str, height: int = 430):
 
 
 def make_score_corr(df: pd.DataFrame, score_cols: List[str], height: int = 520):
-    corr = df[score_cols].corr()
+    corr = df[score_cols].corr().fillna(0.0)
     corr = corr.rename(index=CONSTRUCT_LABELS, columns=CONSTRUCT_LABELS)
     fig = px.imshow(
         corr,
@@ -3222,7 +3317,7 @@ def make_demographic_construct_heatmap(table: pd.DataFrame, group_name: str, val
     chart_df = add_semantic_construct_column(table)
     if group_name in chart_df.columns:
         chart_df[group_name] = chart_df[group_name].map(response_label)
-    pivot = chart_df.pivot(index=group_name, columns="Khía cạnh", values=value_col)
+    pivot = chart_df.pivot(index=group_name, columns="Khía cạnh", values=value_col).fillna(0.0)
     fig = px.imshow(
         pivot,
         text_auto=".1f",
@@ -4264,7 +4359,7 @@ def render_data_quality_tab(raw_df: pd.DataFrame, filtered_raw: pd.DataFrame, pr
         render_table(construct_definition_table(), height=380)
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def load_cached_chatbot_gold_tables() -> Dict[str, pd.DataFrame]:
     from dashboard_gcs_loader import load_chat_gold_tables
 
@@ -4337,6 +4432,12 @@ CHAT_TOPIC_LABELS = {
     "mental_health": "Sức khỏe tâm lý",
     "general": "Hỗ trợ chung",
     "unknown": "Không rõ chủ đề",
+    "chưa xác định chủ đề": "Chưa xác định chủ đề",
+    "hỏi tài liệu / hỗ trợ học tập": "Hỏi tài liệu / hỗ trợ học tập",
+    "nguy cơ gây hại người khác": "Nguy cơ gây hại người khác",
+    "nguy cơ tự gây hại": "Nguy cơ tự gây hại",
+    "sức khỏe tinh thần": "Sức khỏe tinh thần",
+    "hỗ trợ chung": "Hỗ trợ chung",
 }
 
 CHAT_HOURLY_TOPIC_COLUMNS = {
@@ -5245,7 +5346,10 @@ def chat_construct_emotion_table(detail: pd.DataFrame, selected_construct: str) 
 def chat_distribution_value(distribution: pd.DataFrame, label_column: str, label_value: str) -> Tuple[int, float]:
     if distribution.empty or label_column not in distribution.columns or "Messages" not in distribution.columns:
         return 0, 0.0
-    mask = distribution[label_column].astype(str).str.lower().eq(label_value.lower())
+    mapping = CHAT_SENTIMENT_LABELS if label_column == "Sentiment" else CHAT_RISK_LABELS if label_column == "Risk level" else CHAT_TOPIC_LABELS
+    labels = distribution[label_column].map(lambda value: chat_label(value, mapping))
+    target = chat_label(label_value, mapping)
+    mask = labels.eq(target)
     if not mask.any():
         return 0, 0.0
     row = distribution.loc[mask].iloc[0]
@@ -5272,6 +5376,11 @@ def fallback_construct_from_topic(topic_totals: pd.DataFrame) -> pd.DataFrame:
         "mental_health": "Tâm trạng, lo âu & trầm cảm",
         "rag_question": "Hỗ trợ học tập / tài liệu",
         "general": "Hỗ trợ chung / chưa rõ cụm",
+        "Nguy cơ gây hại người khác": "Nguy cơ an toàn cấp cao",
+        "Nguy cơ tự gây hại": "Nguy cơ an toàn cấp cao",
+        "Sức khỏe tinh thần": "Tâm trạng, lo âu & trầm cảm",
+        "Hỏi tài liệu / hỗ trợ học tập": "Hỗ trợ học tập / tài liệu",
+        "Hỗ trợ chung": "Hỗ trợ chung / chưa rõ cụm",
     }
     result = topic_totals.copy()
     result["Cụm nội dung"] = result["Topic"].map(mapping).fillna("Hỗ trợ chung / chưa rõ cụm")
@@ -5865,12 +5974,7 @@ def render_chatbot_gold_section(selected_page: str = "Tổng quan") -> None:
             if construct_rate is not None:
                 st.plotly_chart(construct_rate, width="stretch", config=PLOT_CONFIG, key="chat_construct_negative_rate")
         with st.expander("Bảng theo ngày của cụm đang chọn", expanded=False):
-            st.dataframe(
-                chat_construct_emotion_table(construct_detail, selected_construct),
-                width="stretch",
-                hide_index=True,
-                height=220,
-            )
+            render_table(chat_construct_emotion_table(construct_detail, selected_construct), height=220)
     else:
         chart_note("Chưa có số liệu cụm log để lọc cảm xúc.")
 
@@ -6040,7 +6144,7 @@ def render_focused_header(
     raw_df: pd.DataFrame,
     filtered_raw: pd.DataFrame,
 ) -> None:
-    st.title("Student Mental Health Risk Dashboard")
+    st.title("Dashboard nguy cơ sức khỏe tinh thần")
     total = int(filtered_raw.shape[0])
     at_risk_rate = float(filtered_raw["Target"].mean() * 100) if total else 0.0
     student_count = (
@@ -6269,7 +6373,7 @@ def board_filter_q_labels(df: pd.DataFrame, qnum: int, allowed_labels: set[str])
     col = find_q_col(df, qnum)
     if df.empty or col is None:
         return df.copy()
-    labels = df[col].apply(lambda value: value_to_label(value, qnum))
+    labels = values_to_labels(df[col], qnum)
     if qnum == 3:
         labels = labels.map(BOARD_GRADE_LABELS).fillna(labels)
     return df.loc[labels.isin(allowed_labels)].copy()
@@ -6286,7 +6390,7 @@ def board_college_undergraduate_years_only(df: pd.DataFrame) -> pd.DataFrame:
     grade_col = find_q_col(df, 3)
     if df.empty or grade_col is None or POPULATION_COLUMN not in df.columns:
         return df
-    labels = df[grade_col].apply(lambda value: value_to_label(value, 3))
+    labels = values_to_labels(df[grade_col], 3)
     labels = labels.map(BOARD_GRADE_LABELS).fillna(labels)
     undergraduate_years = {"Năm 1", "Năm 2", "Năm 3", "Năm 4+"}
     college_row = df[POPULATION_COLUMN] == HMS_POPULATION_LABEL
@@ -6299,7 +6403,7 @@ def board_college_undergraduate_ages_only(df: pd.DataFrame) -> pd.DataFrame:
     age_col = find_q_col(df, 1)
     if df.empty or age_col is None or POPULATION_COLUMN not in df.columns:
         return df
-    labels = df[age_col].apply(lambda value: value_to_label(value, 1))
+    labels = values_to_labels(df[age_col], 1)
     college_row = df[POPULATION_COLUMN] == HMS_POPULATION_LABEL
     include = ~college_row | labels.isin(BOARD_COLLEGE_UNDERGRAD_AGE_LABELS)
     return df.loc[include].copy()
@@ -6429,7 +6533,7 @@ def board_source_label(value: object) -> str:
     for school_year in ["2022-2023", "2023-2024", "2024-2025"]:
         if school_year in source:
             return school_year
-    return source
+    return source_dataset_label(source)
 
 
 def board_population_summary(df: pd.DataFrame) -> pd.DataFrame:
@@ -6545,7 +6649,10 @@ def board_scope_data(
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     if POPULATION_COLUMN not in raw_df.columns:
         return pd.DataFrame(), pd.DataFrame()
-    scoped_raw = raw_df[raw_df[POPULATION_COLUMN] == population].copy()
+    population_rows = raw_df[POPULATION_COLUMN].eq(population)
+    if population_rows.all():
+        return raw_df, cleaned_df
+    scoped_raw = raw_df[population_rows].copy()
     return scoped_raw, cleaned_df.loc[scoped_raw.index].copy()
 
 
@@ -6584,7 +6691,7 @@ def board_school_endpoint_by_dimension(
     base = school[[signal_col, dimension_col, "Target"]].dropna().copy()
     if base.empty:
         return pd.DataFrame()
-    base[dimension_name] = base[dimension_col].apply(lambda value: value_to_label(value, dimension_qnum))
+    base[dimension_name] = values_to_labels(base[dimension_col], dimension_qnum)
     if dimension_qnum == 3:
         base[dimension_name] = base[dimension_name].map(BOARD_GRADE_LABELS).fillna(base[dimension_name])
     denominator = base.groupby(dimension_name).size()
@@ -6620,7 +6727,7 @@ def board_college_factor_by_dimension(
     base = college[[factor, dimension_col, "Target"]].dropna().copy()
     if base.empty or base[factor].nunique() < 2:
         return pd.DataFrame()
-    base[dimension_name] = base[dimension_col].apply(lambda value: value_to_label(value, dimension_qnum))
+    base[dimension_name] = values_to_labels(base[dimension_col], dimension_qnum)
     if dimension_qnum == 3:
         base[dimension_name] = base[dimension_name].map(BOARD_GRADE_LABELS).fillna(base[dimension_name])
     rows = []
@@ -6668,7 +6775,7 @@ def render_dimension_heatmap(
         return
     matrix = data.pivot(index="Nhóm phản hồi", columns=dimension_name, values=metric)
     ordered_columns = [label for label in dimension_order if label in matrix.columns]
-    matrix = matrix.reindex(columns=ordered_columns or matrix.columns.tolist())
+    matrix = matrix.reindex(columns=ordered_columns or matrix.columns.tolist()).fillna(0.0)
     fig = px.imshow(
         matrix,
         text_auto=".1f",
@@ -6722,7 +6829,7 @@ def render_cluster_heatmap(
     plot = plot[plot["Cụm khảo sát"].isin(cluster_order)].copy()
     matrix = plot.pivot(index="Cụm khảo sát", columns=dimension_name, values=metric)
     ordered_columns = [label for label in dimension_order if label in matrix.columns]
-    matrix = matrix.reindex(index=cluster_order, columns=ordered_columns or matrix.columns.tolist())
+    matrix = matrix.reindex(index=cluster_order, columns=ordered_columns or matrix.columns.tolist()).fillna(0.0)
     short_index = [board_short_label(label, 36) for label in matrix.index]
     customdata = [[cluster for _ in matrix.columns] for cluster in matrix.index]
     fig = go.Figure(
@@ -6839,7 +6946,7 @@ def board_construct_impact_by_dimension(
     dimension_col = find_q_col(raw_df, dimension_qnum)
     if dimension_col is None or feature not in score_df.columns:
         return pd.DataFrame()
-    dimension_values = raw_df[dimension_col].apply(lambda value: value_to_label(value, dimension_qnum))
+    dimension_values = values_to_labels(raw_df[dimension_col], dimension_qnum)
     if dimension_qnum == 3:
         dimension_values = dimension_values.map(BOARD_GRADE_LABELS).fillna(dimension_values)
     valid_dimension = ~dimension_values.astype(str).str.strip().str.lower().isin({"missing", "nan", "none", ""})
@@ -7017,7 +7124,7 @@ def board_score_cluster_by_dimension(
     dimension_col = find_q_col(raw_df, dimension_qnum)
     if dimension_col is None or "Target" not in raw_df.columns:
         return pd.DataFrame()
-    dimension_values = raw_df[dimension_col].apply(lambda value: value_to_label(value, dimension_qnum))
+    dimension_values = values_to_labels(raw_df[dimension_col], dimension_qnum)
     if dimension_qnum == 3:
         dimension_values = dimension_values.map(BOARD_GRADE_LABELS).fillna(dimension_values)
     dimension_values = dimension_values.mask(
@@ -7113,7 +7220,7 @@ def board_school_cluster_by_dimension(
             base = school[[dimension_col, signal_col, "Target"]].dropna().copy()
             if base.empty:
                 continue
-            base[dimension_name] = base[dimension_col].apply(lambda value: value_to_label(value, dimension_qnum))
+            base[dimension_name] = values_to_labels(base[dimension_col], dimension_qnum)
             if dimension_qnum == 3:
                 base[dimension_name] = base[dimension_name].map(BOARD_GRADE_LABELS).fillna(base[dimension_name])
             base = base[
@@ -7682,15 +7789,15 @@ def render_executive_board(
     heading_by_page = {
         "Tổng quan": (
             "THEO DÕI NGUY CƠ SỨC KHỎE TINH THẦN",
-            "Học sinh và sinh viên | tỷ lệ trong nhóm và yếu tố cảnh báo liên quan",
+            "Khảo sát và hội thoại tư vấn | học sinh và sinh viên",
         ),
         "Học sinh": (
             "PHÂN TÍCH NGUY CƠ | HỌC SINH",
-            "Cụm khảo sát chi tiết, tuổi, lớp và tín hiệu liên quan nổi bật",
+            "Khảo sát và hội thoại tư vấn | tuổi, lớp và tín hiệu nổi bật",
         ),
         "Sinh viên": (
             "PHÂN TÍCH NGUY CƠ | SINH VIÊN",
-            "Cụm khảo sát chi tiết, năm học, độ tuổi và xu hướng theo năm",
+            "Khảo sát và hội thoại tư vấn | năm học, độ tuổi và xu hướng",
         ),
     }
     heading, subtitle = heading_by_page.get(selected_page, heading_by_page["Tổng quan"])
@@ -7709,10 +7816,18 @@ def render_executive_board(
 
     if selected_page == "Học sinh":
         render_school_detail_board(filtered_raw, filtered_cleaned, processed)
+        board_section(
+            "Hội thoại tư vấn của học sinh",
+            "Chatlogs đã được xử lý và tổng hợp theo cảm xúc, thời gian và cụm nội dung.",
+        )
         render_chatbot_gold_section(selected_page)
         return
     if selected_page == "Sinh viên":
         render_college_detail_board(filtered_raw, filtered_cleaned)
+        board_section(
+            "Hội thoại tư vấn của sinh viên",
+            "Chatlogs đã được xử lý và tổng hợp theo cảm xúc, thời gian và cụm nội dung.",
+        )
         render_chatbot_gold_section(selected_page)
         return
 
@@ -7924,21 +8039,38 @@ def render_executive_board(
             )
         chart_note("Mỗi dòng so sánh tỷ lệ nguy cơ giữa nhóm phản hồi mức thấp và mức cao.")
 
+    board_section(
+        "Hội thoại tư vấn toàn hệ thống",
+        "Chatlogs đã được xử lý và tổng hợp theo cảm xúc, thời gian và cụm nội dung.",
+    )
     render_chatbot_gold_section(selected_page)
 
 def main() -> None:
     inject_css()
     selected_page = main_navigation()
 
-    processed, source_text, source_shape, cache_status = load_data_ui()
+    processed, source_text, source_shape, cache_status = load_data_ui(selected_page)
 
     if processed is None:
         render_no_data_state()
         return
 
     populations, sources, ages, genders, grades, targets = sidebar_description_filters(processed)
-    filtered_raw = apply_description_filters(processed.raw_analysis, populations, sources, ages, genders, grades, targets)
-    filtered_cleaned = processed.cleaned.loc[filtered_raw.index].copy()
+    active_filters = any((populations, sources, ages, genders, grades, targets))
+    if active_filters:
+        filtered_raw = apply_description_filters(
+            processed.raw_analysis,
+            populations,
+            sources,
+            ages,
+            genders,
+            grades,
+            targets,
+        )
+        filtered_cleaned = processed.cleaned.loc[filtered_raw.index].copy()
+    else:
+        filtered_raw = processed.raw_analysis
+        filtered_cleaned = processed.cleaned
     sidebar_status(source_text, source_shape, filtered_raw, cache_status)
 
     inject_board_css()

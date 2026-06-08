@@ -14,6 +14,8 @@ COPY MentalSchool_Dashboard/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY --chown=appuser:appuser MentalSchool_Dashboard /app
+COPY --chown=appuser:appuser scripts/update_survey_gold_current_manifest.py /app/scripts/update_survey_gold_current_manifest.py
+RUN mkdir -p /app/data/.dashboard_cache && chown -R appuser:appuser /app/data
 
 EXPOSE 8501
 

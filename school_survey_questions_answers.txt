@@ -1,0 +1,328 @@
+BO CAU HOI HOC SINH - THEO CUM DASHBOARD
+Nguon tham chieu dap an: 2023_National_YRBS_Data_Users_Guide508.pdf
+Muc dich: dung lam form survey moi cho nhom hoc sinh, sau do map ve Silver/Gold dashboard.
+
+PHAN CHUNG
+
+1. gender
+Cau hoi: Gioi tinh cua ban la gi?
+Dap an goi y:
+- Nu
+- Nam
+- Khac / khong muon tra loi
+
+2. school_grade
+Cau hoi: Ban dang hoc lop may?
+Dap an goi y:
+- Lop 9
+- Lop 10
+- Lop 11
+- Lop 12
+
+==================================================
+CUM 1 - SUC KHOE TINH THAN VA TU HAI
+==================================================
+
+5. school_sad_hopeless_2weeks
+Map dashboard/YRBS: q26
+Cau hoi: Trong 12 thang qua, ban co tung cam thay buon ba hoac tuyet vong gan nhu moi ngay trong 2 tuan lien tiep den muc dung mot so hoat dong thuong ngay khong?
+Dap an:
+- Yes
+- No
+
+6. school_poor_mental_health_days
+Map dashboard/YRBS: q84
+Cau hoi: Trong 30 ngay qua, suc khoe tinh than cua ban khong tot thuong xuyen nhu the nao? Bao gom cang thang, lo au va tram cam.
+Dap an:
+- Never
+- Rarely
+- Sometimes
+- Most of the time
+- Always
+
+7. school_suicide_ideation
+Map dashboard/YRBS: q27
+Cau hoi: Trong 12 thang qua, ban co tung nghiem tuc nghi den viec tu tu khong?
+Dap an:
+- Yes
+- No
+
+8. school_suicide_plan
+Map dashboard/YRBS: q28
+Cau hoi: Trong 12 thang qua, ban co tung lap ke hoach ve cach ban se tu tu khong?
+Dap an:
+- Yes
+- No
+
+9. school_suicide_attempt
+Map dashboard/YRBS: q29
+Cau hoi: Trong 12 thang qua, ban da that su co gang tu tu bao nhieu lan?
+Dap an:
+- 0 times
+- 1 time
+- 2 or 3 times
+- 4 or 5 times
+- 6 or more times
+
+==================================================
+CUM 2 - AN TOAN / BAT NAT
+==================================================
+
+10. school_unsafe_absence
+Map dashboard/YRBS: q14
+Cau hoi: Trong 30 ngay qua, co bao nhieu ngay ban khong di hoc vi cam thay khong an toan o truong hoac tren duong den/ve truong?
+Dap an:
+- 0 days
+- 1 day
+- 2 or 3 days
+- 4 or 5 days
+- 6 or more days
+
+11. school_weapon_threat
+Map dashboard/YRBS: q15
+Cau hoi: Trong 12 thang qua, co bao nhieu lan ban bi de doa hoac lam bi thuong bang vu khi nhu sung, dao, gay o truong?
+Dap an:
+- 0 times
+- 1 time
+- 2 or 3 times
+- 4 or 5 times
+- 6 or 7 times
+- 8 or 9 times
+- 10 or 11 times
+- 12 or more times
+
+12. school_physical_fight
+Map dashboard/YRBS: q16
+Cau hoi: Trong 12 thang qua, ban da tham gia danh nhau bao nhieu lan?
+Dap an:
+- 0 times
+- 1 time
+- 2 or 3 times
+- 4 or 5 times
+- 6 or 7 times
+- 8 or 9 times
+- 10 or 11 times
+- 12 or more times
+
+13. school_bullied_school
+Map dashboard/YRBS: q24
+Cau hoi: Trong 12 thang qua, ban co tung bi bat nat tai truong khong?
+Dap an:
+- Yes
+- No
+
+14. school_bullied_online
+Map dashboard/YRBS: q25
+Cau hoi: Trong 12 thang qua, ban co tung bi bat nat dien tu khong? Bao gom bi bat nat qua tin nhan, Instagram, Facebook hoac mang xa hoi khac.
+Dap an:
+- Yes
+- No
+
+==================================================
+CUM 3 - SANG CHAN / TON HAI QUAN HE
+==================================================
+
+15. school_forced_sexual_contact
+Map dashboard/YRBS: q19
+Cau hoi: Ban co tung bi ep quan he tinh duc khi ban khong muon khong?
+Dap an:
+- Yes
+- No
+
+16. school_dating_sexual_violence
+Map dashboard/YRBS: q21
+Cau hoi: Trong 12 thang qua, co bao nhieu lan nguoi ban dang hen ho ep ban lam nhung viec tinh duc ma ban khong muon?
+Dap an:
+- I did not date or go out with anyone during the past 12 months
+- 0 times
+- 1 time
+- 2 or 3 times
+- 4 or 5 times
+- 6 or more times
+
+17. school_dating_physical_violence
+Map dashboard/YRBS: q22
+Cau hoi: Trong 12 thang qua, co bao nhieu lan nguoi ban dang hen ho co y lam ban dau ve the chat?
+Dap an:
+- I did not date or go out with anyone during the past 12 months
+- 0 times
+- 1 time
+- 2 or 3 times
+- 4 or 5 times
+- 6 or more times
+
+==================================================
+CUM 4 - GIA DINH / HO TRO / NHU CAU CO BAN
+==================================================
+
+18. school_adult_verbal_abuse
+Map dashboard/YRBS: q89
+Cau hoi: Trong doi ban, cha/me hoac nguoi lon trong nha co thuong xuyen xuc pham hoac ha thap ban khong?
+Dap an:
+- Never
+- Rarely
+- Sometimes
+- Most of the time
+- Always
+
+19. school_adult_physical_abuse
+Map dashboard/YRBS: q90
+Cau hoi: Trong doi ban, cha/me hoac nguoi lon trong nha co tung danh, da, dap hoac lam dau ban ve the chat khong?
+Dap an:
+- Never
+- Rarely
+- Sometimes
+- Most of the time
+- Always
+
+20. school_family_violence_witness
+Map dashboard/YRBS: q91
+Cau hoi: Trong doi ban, cha/me hoac nguoi lon trong nha co tung danh, da, dap hoac danh nhau voi nhau khong?
+Dap an:
+- Never
+- Rarely
+- Sometimes
+- Most of the time
+- Always
+
+21. school_basic_needs_met
+Map dashboard/YRBS: q99
+Cau hoi: Trong doi ban, co nguoi lon trong nha co gang dam bao nhu cau co ban cua ban nhu an toan, quan ao sach va du an khong?
+Dap an:
+- Never
+- Rarely
+- Sometimes
+- Most of the time
+- Always
+
+22. school_parent_monitoring
+Map dashboard/YRBS: q104
+Cau hoi: Cha/me hoac nguoi lon trong gia dinh co thuong biet ban di dau hoac di voi ai khong?
+Dap an:
+- Never
+- Rarely
+- Sometimes
+- Most of the time
+- Always
+
+==================================================
+CUM 5 - HOC TAP / KET NOI TRUONG HOC
+==================================================
+
+23. school_academic_performance
+Map dashboard/YRBS: q87
+Cau hoi: Trong 12 thang qua, ban mo ta diem so cua minh o truong nhu the nao?
+Dap an:
+- Mostly A's
+- Mostly B's
+- Mostly C's
+- Mostly D's
+- Mostly F's
+- None of these grades
+- Not sure
+
+24. school_school_belonging
+Map dashboard/YRBS: q103
+Cau hoi: Ban dong y hay khong dong y rang ban cam thay gan gui voi moi nguoi o truong?
+Dap an:
+- Strongly agree
+- Agree
+- Not sure
+- Disagree
+- Strongly disagree
+
+25. school_unfair_discipline
+Map dashboard/YRBS: q105
+Cau hoi: Trong 12 thang qua, ban co bi ky luat khong cong bang o truong khong?
+Dap an:
+- Yes
+- No
+
+26. school_concentration_difficulty
+Map dashboard/YRBS: q106
+Cau hoi: Vi van de the chat, tinh than hoac cam xuc, ban co gap kho khan nghiem trong trong viec tap trung, ghi nho hoac ra quyet dinh khong?
+Dap an:
+- Yes
+- No
+
+==================================================
+CUM 6 - CHAT KICH THICH
+==================================================
+
+27. school_smoking_current
+Map dashboard/YRBS: q33
+Cau hoi: Trong 30 ngay qua, ban da hut thuoc la vao bao nhieu ngay?
+Dap an:
+- 0 days
+- 1 or 2 days
+- 3 to 5 days
+- 6 to 9 days
+- 10 to 19 days
+- 20 to 29 days
+- All 30 days
+
+28. school_vaping_current
+Map dashboard/YRBS: q36
+Cau hoi: Trong 30 ngay qua, ban da dung san pham vape/thuoc la dien tu vao bao nhieu ngay?
+Dap an:
+- 0 days
+- 1 or 2 days
+- 3 to 5 days
+- 6 to 9 days
+- 10 to 19 days
+- 20 to 29 days
+- All 30 days
+
+29. school_alcohol_current
+Map dashboard/YRBS: q42
+Cau hoi: Trong 30 ngay qua, ban da uong it nhat mot ly ruou/bia vao bao nhieu ngay?
+Dap an:
+- 0 days
+- 1 or 2 days
+- 3 to 5 days
+- 6 to 9 days
+- 10 to 19 days
+- 20 to 29 days
+- All 30 days
+
+==================================================
+CUM 7 - PHUC HOI / LOI SONG
+==================================================
+
+30. school_sleep_hours
+Map dashboard/YRBS: q85
+Cau hoi: Trung binh vao mot dem co di hoc, ban ngu bao nhieu gio?
+Dap an:
+- 4 or less hours
+- 5 hours
+- 6 hours
+- 7 hours
+- 8 hours
+- 9 hours
+- 10 or more hours
+
+31. school_physical_activity_days
+Map dashboard/YRBS: q76
+Cau hoi: Trong 7 ngay qua, co bao nhieu ngay ban van dong the chat tong cong it nhat 60 phut moi ngay?
+Dap an:
+- 0 days
+- 1 day
+- 2 days
+- 3 days
+- 4 days
+- 5 days
+- 6 days
+- 7 days
+
+32. school_breakfast_frequency
+Map dashboard/YRBS: q75
+Cau hoi: Trong 7 ngay qua, co bao nhieu ngay ban an sang?
+Dap an:
+- 0 days
+- 1 day
+- 2 days
+- 3 days
+- 4 days
+- 5 days
+- 6 days
+- 7 days

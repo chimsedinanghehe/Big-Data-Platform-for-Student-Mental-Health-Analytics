@@ -92,9 +92,17 @@ def classify_emotion(text: str, settings: RAGSettings | None = None, top_k: int 
 
 def format_emotion_signal(signal: EmotionSignal | None) -> str:
     if signal is None or not signal.detected:
-        return "No high-confidence emotional signal detected."
+        return "Không phát hiện tín hiệu cảm xúc đủ tin cậy."
     confidence_percent = round(signal.confidence * 100, 1)
-    return f"{signal.label} ({confidence_percent}% confidence)"
+    label = {
+        "ANGER_DISGUST": "Tức giận / khó chịu",
+        "DESPAIR_AND_GRIEF": "Tuyệt vọng / buồn đau",
+        "FEAR_NERVOUSNESS": "Lo sợ / căng thẳng",
+        "NEUTRAL": "Trung tính",
+        "POSITIVE": "Tích cực",
+        "SURPRISE_CURIOSITY": "Ngạc nhiên / tò mò",
+    }.get(signal.label, signal.label)
+    return f"{label} (độ tin cậy {confidence_percent}%)"
 
 
 def emotion_signal_to_metadata(signal: EmotionSignal | None) -> dict:

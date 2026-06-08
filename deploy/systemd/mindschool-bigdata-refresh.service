@@ -1,0 +1,14 @@
+[Unit]
+Description=MindSchool Dataproc Serverless Bronze Silver Gold refresh
+After=network-online.target mindschool-kafka-tunnel.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/mindschool/app
+Environment=HOME=/root
+Environment=CLOUDSDK_CONFIG=/root/.config/gcloud
+Environment=PATH=/snap/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/flock -n /run/mindschool-bigdata-refresh.lock /opt/mindschool/app/deploy/gcp/run-bigdata-refresh.sh
+TimeoutStartSec=4h

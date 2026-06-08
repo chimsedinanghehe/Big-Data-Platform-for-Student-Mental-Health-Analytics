@@ -70,7 +70,10 @@ build/
 *.tar
 *.tar.gz
 *.md
+!deploy/BIGDATA_PRODUCTION.md
 *.txt
+!school_survey_questions_answers.txt
+!university_survey_questions_answers.txt
 *.docx
 
 # Deployment runtime state

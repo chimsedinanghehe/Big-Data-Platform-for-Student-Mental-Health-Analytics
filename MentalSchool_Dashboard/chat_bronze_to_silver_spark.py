@@ -95,12 +95,12 @@ OUTPUT_COLUMNS = [
     "is_valid",
 ]
 
-HIGH_RISK_PATTERN = r"(?i)(\bkill\b|\bmurder\b|\bsuicide\b|hurt\s+someone|harm\s+someone|self\s*harm|kill\s+myself|hurt\s+myself)"
-MEDIUM_RISK_PATTERN = r"(?i)(\bsad\b|\bstress\b|\bstressed\b|\bdepress\w*\b|\banxiety\b|\bpanic\b|\bhopeless\b|lonely|burnout)"
-NEGATIVE_PATTERN = r"(?i)(\bsad\b|\bstress\b|\bstressed\b|\bdepress\w*\b|\banxiety\b|\bpanic\b|\bkill\b|\bsuicide\b|\bhurt\b|\bharm\b|\bhopeless\b|lonely|burnout)"
-POSITIVE_PATTERN = r"(?i)(\bhappy\b|\bgood\b|\bgreat\b|\bthanks\b|thank\s+you|\bbetter\b)"
-HARM_INTENT_PATTERN = r"(?i)(\bkill\b|\bmurder\b|hurt\s+someone|harm\s+someone)"
-SELF_HARM_PATTERN = r"(?i)(\bsuicide\b|self\s*harm|kill\s+myself|hurt\s+myself)"
+HIGH_RISK_PATTERN = r"(?i)(\bkill\b|\bmurder\b|\bsuicide\b|hurt\s+someone|harm\s+someone|self\s*harm|kill\s+myself|hurt\s+myself|tự\s*tử|tự\s*hại|giết\s+mình|làm\s+hại\s+bản\s+thân|giết\s+người|làm\s+hại\s+người)"
+MEDIUM_RISK_PATTERN = r"(?i)(\bsad\b|\bstress\b|\bstressed\b|\bdepress\w*\b|\banxiety\b|\bpanic\b|\bhopeless\b|lonely|burnout|buồn|căng\s*thẳng|trầm\s*cảm|lo\s*âu|hoảng\s*loạn|tuyệt\s*vọng|cô\s*đơn|kiệt\s*sức)"
+NEGATIVE_PATTERN = r"(?i)(\bsad\b|\bstress\b|\bstressed\b|\bdepress\w*\b|\banxiety\b|\bpanic\b|\bkill\b|\bsuicide\b|\bhurt\b|\bharm\b|\bhopeless\b|lonely|burnout|buồn|căng\s*thẳng|trầm\s*cảm|lo\s*âu|hoảng\s*loạn|tự\s*tử|tự\s*hại|đau\s*khổ|tuyệt\s*vọng|cô\s*đơn|kiệt\s*sức)"
+POSITIVE_PATTERN = r"(?i)(\bhappy\b|\bgood\b|\bgreat\b|\bthanks\b|thank\s+you|\bbetter\b|vui|ổn|tốt|cảm\s*ơn|đỡ\s*hơn|khá\s*hơn)"
+HARM_INTENT_PATTERN = r"(?i)(\bkill\b|\bmurder\b|hurt\s+someone|harm\s+someone|giết\s+người|làm\s+hại\s+người|đánh\s+người)"
+SELF_HARM_PATTERN = r"(?i)(\bsuicide\b|self\s*harm|kill\s+myself|hurt\s+myself|tự\s*tử|tự\s*hại|giết\s+mình|làm\s+hại\s+bản\s+thân)"
 
 
 def parse_args() -> argparse.Namespace:

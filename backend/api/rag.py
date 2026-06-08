@@ -30,7 +30,7 @@ def ask_rag(request: RAGAskRequest, authorization: str | None = Header(default=N
     if not question:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error": "missing_question", "message": "Question is required."},
+            detail={"error": "missing_question", "message": "Bạn cần nhập câu hỏi trước khi gửi."},
         )
 
     session_id = (request.session_id or str(uuid4())).strip()
@@ -69,50 +69,38 @@ def ask_rag(request: RAGAskRequest, authorization: str | None = Header(default=N
         if "QDRANT" in str(exc):
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail={"error": "qdrant_configuration_error", "message": "Qdrant vector store is not configured."},
+                detail={"error": "qdrant_configuration_error", "message": "Kho tri thức Qdrant chưa được cấu hình."},
             ) from exc
         if _looks_like_generation_error(exc):
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail={"error": "openai_unavailable", "message": str(exc)},
+                detail={"error": "openai_unavailable", "message": "Dịch vụ sinh câu trả lời hiện chưa sẵn sàng."},
             ) from exc
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"error": "rag_runtime_error", "message": "RAG service failed while processing the request."},
+            detail={"error": "rag_runtime_error", "message": "Dịch vụ chatbot gặp lỗi khi xử lý câu hỏi."},
         ) from exc
     except (ApiException, ResponseHandlingException, UnexpectedResponse) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"error": "qdrant_unavailable", "message": "Qdrant vector store is unavailable."},
+            detail={"error": "qdrant_unavailable", "message": "Kho tri thức Qdrant hiện chưa sẵn sàng."},
         ) from exc
     except Exception as exc:
         if _looks_like_generation_error(exc):
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail={"error": "openai_unavailable", "message": "OpenAI generation service is unavailable."},
+                detail={"error": "openai_unavailable", "message": "Dịch vụ sinh câu trả lời hiện chưa sẵn sàng."},
             ) from exc
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"error": "internal_error", "message": "Unexpected RAG service error."},
+            detail={"error": "internal_error", "message": "Chatbot gặp lỗi ngoài dự kiến."},
         ) from exc
 
     if isinstance(result, dict):
         answer = str(result.get("answer", "")).strip()
         sources = list(result.get("sources", []))
-        standalone_query = result.get("standalone_query")
-        emotion = result.get("emotion")
-        safety = result.get("safety")
     else:
         answer, sources = _split_answer_sources(str(result))
-        standalone_query = question
-        emotion = None
-        safety = None
-
-    if answer.startswith("No relevant documents found."):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"error": "empty_retrieval", "message": "No relevant documents were found for the question."},
-        )
 
     # THAY THẾ ĐOẠN GỌI GCS CŨ BẰNG KAFKA
     try:
@@ -153,6 +141,9 @@ def _optional_user(authorization: str | None):
 
 def _split_answer_sources(raw_answer: str) -> tuple[str, list[str]]:
     marker = "\n\nSources:\n"
+    vi_marker = "\n\nNguồn tham khảo:\n"
+    if vi_marker in raw_answer:
+        marker = vi_marker
     if marker not in raw_answer:
         return raw_answer.strip(), []
 

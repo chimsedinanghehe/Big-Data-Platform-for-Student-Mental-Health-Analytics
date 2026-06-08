@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
 from collections import defaultdict
 from datetime import UTC, datetime
 
 from google.cloud import storage
 
 
-PROJECT_ID = "student-mental-health-496205"
-BUCKET_NAME = "student-mental-health-lake-nhom1-2026"
+PROJECT_ID = os.getenv("GCP_PROJECT_ID", "student-mental-health-496205")
+BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "student-mental-health-lake-nhom1-2026")
 MANIFEST_OBJECT = "gold/dashboard_tables/_manifests/survey_current.json"
 TABLE_PREFIXES = {
     "survey_overview_summary": "gold/dashboard_tables/survey_overview_summary/",

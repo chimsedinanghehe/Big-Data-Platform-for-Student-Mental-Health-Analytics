@@ -17,7 +17,7 @@ const state = {
       id: "welcome",
       role: "assistant",
       content:
-        "Hi. Ask a student wellbeing question and I will answer using the trusted knowledge base when relevant.",
+        "Chào bạn. Bạn có thể hỏi mình về sức khỏe tinh thần, học tập, cảm xúc hoặc cách tìm hỗ trợ phù hợp.",
     },
   ],
   input: "",
@@ -362,14 +362,14 @@ function renderAuthWorkspace() {
   const workspace = el("section", { className: "workspace auth-workspace" });
   const header = el("header", { className: "app-header auth-header" });
   const titleWrap = el("div");
-  titleWrap.appendChild(el("h1", {}, "Student Mental Health Platform"));
-  titleWrap.appendChild(el("p", {}, "Login first to use the dashboard and chatbot."));
+  titleWrap.appendChild(el("h1", {}, "MindSchool - Nền tảng sức khỏe tinh thần"));
+  titleWrap.appendChild(el("p", {}, "Đăng nhập để dùng chatbot, khảo sát và dashboard."));
   header.appendChild(titleWrap);
   workspace.appendChild(header);
 
   if (state.authChecking) {
     const panel = el("section", { className: "auth-panel" });
-    panel.appendChild(el("div", { className: "empty-state" }, "Checking session..."));
+    panel.appendChild(el("div", { className: "empty-state" }, "Đang kiểm tra phiên đăng nhập..."));
     workspace.appendChild(panel);
     return workspace;
   }
@@ -402,7 +402,7 @@ function renderSurveyWorkspace() {
   const workspace = el("section", { className: "workspace app-workspace survey-workspace" });
   const header = el("header", { className: "survey-focus-header" });
   const titleWrap = el("div");
-  titleWrap.appendChild(el("h1", {}, "Student Mental Health Platform"));
+  titleWrap.appendChild(el("h1", {}, "MindSchool - Nền tảng sức khỏe tinh thần"));
   titleWrap.appendChild(el("p", {}, "Tiến độ khảo sát được lưu tự động trên thiết bị này."));
   header.appendChild(titleWrap);
 
@@ -414,7 +414,7 @@ function renderSurveyWorkspace() {
     render();
   });
   actions.appendChild(pauseButton);
-  const logoutButton = el("button", { type: "button", className: "secondary-button" }, "Logout");
+  const logoutButton = el("button", { type: "button", className: "secondary-button" }, "Đăng xuất");
   logoutButton.addEventListener("click", logout);
   actions.appendChild(logoutButton);
   header.appendChild(actions);
@@ -429,13 +429,13 @@ function renderSurveyWorkspace() {
 function renderTopBar() {
   const header = el("header", { className: "topbar" });
   const titleWrap = el("div");
-  titleWrap.appendChild(el("h1", {}, "Student Mental Health Platform"));
-  titleWrap.appendChild(el("p", {}, state.currentUser.role === "student" ? "Chatbot, khảo sát tâm lý và dashboard." : "Analytics dashboard and account profile."));
+  titleWrap.appendChild(el("h1", {}, "MindSchool - Nền tảng sức khỏe tinh thần"));
+  titleWrap.appendChild(el("p", {}, state.currentUser.role === "student" ? "Chatbot, khảo sát tâm lý và dashboard." : "Dashboard phân tích và hồ sơ tài khoản."));
   header.appendChild(titleWrap);
 
   const right = el("div", { className: "header-actions" });
   right.appendChild(el("div", { className: "account-chip" }, `${state.currentUser.display_name} | ${state.currentUser.role}`));
-  const logoutButton = el("button", { type: "button", className: "secondary-button" }, "Logout");
+  const logoutButton = el("button", { type: "button", className: "secondary-button" }, "Đăng xuất");
   logoutButton.addEventListener("click", logout);
   right.appendChild(logoutButton);
   header.appendChild(right);
@@ -443,8 +443,8 @@ function renderTopBar() {
 }
 
 function renderSidebar() {
-  const sidebar = el("aside", { className: "sidebar", "aria-label": "Workspace navigation" });
-  const label = el("div", { className: "sidebar-label" }, "Workspace");
+  const sidebar = el("aside", { className: "sidebar", "aria-label": "Điều hướng không gian làm việc" });
+  const label = el("div", { className: "sidebar-label" }, "Không gian làm việc");
   sidebar.appendChild(label);
 
   const nav = el("nav", { className: "side-nav" });
@@ -491,17 +491,17 @@ function getNavItems() {
   if (state.currentUser.role === "student") {
     const surveyRequired = isSurveyRequired();
     const surveyCompleted = isSurveyCompleted();
-    const items = [{ view: "chat", label: "Chatbot" }];
+    const items = [{ view: "chat", label: "Chatbot tư vấn" }];
     if (surveyRequired && !surveyCompleted) {
       items.push({ view: "survey", label: "Khảo sát tâm lý" });
     }
     items.push({ view: "dashboard", label: "Dashboard", locked: surveyRequired && !surveyCompleted });
-    items.push({ view: "profile", label: "Profile" });
+    items.push({ view: "profile", label: "Hồ sơ" });
     return items;
   }
   return [
     { view: "dashboard", label: "Dashboard" },
-    { view: "profile", label: "Profile" },
+    { view: "profile", label: "Hồ sơ" },
   ];
 }
 
@@ -560,7 +560,7 @@ function renderSurveyPrompt() {
     className: "survey-modal",
     role: "dialog",
     "aria-modal": "true",
-    "aria-label": "Survey required",
+    "aria-label": "Cần hoàn thành khảo sát",
   });
   dialog.appendChild(el("h2", {}, "Khảo sát tâm lý"));
   dialog.appendChild(
@@ -603,24 +603,24 @@ function renderToast(message) {
 function renderAuth() {
   const panel = el("section", {
     className: `auth-panel auth-mode-${state.authMode}`,
-    "aria-label": "Authentication",
+    "aria-label": "Xác thực tài khoản",
   });
 
   const modeTabs = el("div", { className: "mode-tabs" });
-  modeTabs.appendChild(renderModeButton("login", "Login"));
-  modeTabs.appendChild(renderModeButton("register", "Register"));
+  modeTabs.appendChild(renderModeButton("login", "Đăng nhập"));
+  modeTabs.appendChild(renderModeButton("register", "Đăng ký"));
   panel.appendChild(modeTabs);
 
   const form = el("form", { className: `user-form wide auth-form auth-form-${state.authMode}` });
   form.appendChild(renderInput("Email", "email", state.auth.email, "email", "you@example.com", (value) => {
     updateAuthField("email", value);
   }));
-  form.appendChild(renderInput("Password", "password", state.auth.password, "password", state.authMode === "login" ? "Enter your password" : "At least 8 characters", (value) => {
+  form.appendChild(renderInput("Mật khẩu", "password", state.auth.password, "password", state.authMode === "login" ? "Nhập mật khẩu" : "Ít nhất 8 ký tự", (value) => {
     updateAuthField("password", value);
   }));
 
   if (state.authMode === "register") {
-    form.appendChild(renderInput("Display name", "text", state.auth.displayName, "displayName", "Name shown in the app", (value) => {
+    form.appendChild(renderInput("Tên hiển thị", "text", state.auth.displayName, "displayName", "Tên hiển thị trong ứng dụng", (value) => {
       updateAuthField("displayName", value);
     }));
     form.appendChild(renderRoleField());
@@ -629,7 +629,7 @@ function renderAuth() {
     }
   }
 
-  const buttonText = state.auth.isSaving ? "Working..." : state.authMode === "login" ? "Login" : "Register";
+  const buttonText = state.auth.isSaving ? "Đang xử lý..." : state.authMode === "login" ? "Đăng nhập" : "Đăng ký";
   const button = el("button", { type: "submit", className: "primary-button" }, buttonText);
   button.disabled = state.auth.isSaving;
   form.appendChild(button);
@@ -657,10 +657,10 @@ function renderModeButton(mode, label) {
 }
 
 function renderDashboard() {
-  const panel = el("section", { className: "dashboard-panel", "aria-label": "Analytics dashboard" });
+  const panel = el("section", { className: "dashboard-panel", "aria-label": "Dashboard phân tích" });
   panel.appendChild(el("iframe", {
     className: "dashboard-frame",
-    title: "Mental school analytics dashboard",
+    title: "Dashboard phân tích sức khỏe tinh thần",
     src: DASHBOARD_URL,
   }));
   return panel;
@@ -669,7 +669,7 @@ function renderDashboard() {
 function renderChat() {
   const panel = el("section", {
     className: "chat-panel",
-    "aria-label": "Student support chatbot",
+    "aria-label": "Chatbot hỗ trợ học sinh sinh viên",
   });
 
   panel.appendChild(renderChatHeader());
@@ -686,26 +686,26 @@ function renderChat() {
 function renderChatHeader() {
   const header = el("header", { className: "panel-header" });
   const titleWrap = el("div");
-  titleWrap.appendChild(el("h2", {}, "Student Support Chat"));
-  titleWrap.appendChild(el("p", {}, "Grounded wellbeing guidance from the project knowledge base."));
+  titleWrap.appendChild(el("h2", {}, "Chatbot hỗ trợ MindSchool"));
+  titleWrap.appendChild(el("p", {}, "Gợi ý an toàn, thực tế, dựa trên kho tri thức của dự án."));
   header.appendChild(titleWrap);
-  header.appendChild(el("div", { className: "status-pill" }, "Qdrant RAG"));
+  header.appendChild(el("div", { className: "status-pill" }, "Kho tri thức"));
   return header;
 }
 
 function renderProfile() {
-  const panel = el("section", { className: "user-panel", "aria-label": "User profile" });
+  const panel = el("section", { className: "user-panel", "aria-label": "Hồ sơ người dùng" });
   const header = el("header", { className: "panel-header" });
   const titleWrap = el("div");
-  titleWrap.appendChild(el("h2", {}, "Profile"));
-  titleWrap.appendChild(el("p", {}, "Only account fields required for the app are shown here."));
+  titleWrap.appendChild(el("h2", {}, "Hồ sơ"));
+  titleWrap.appendChild(el("p", {}, "Chỉ hiển thị các thông tin tài khoản cần cho hệ thống."));
   header.appendChild(titleWrap);
   header.appendChild(el("div", { className: "status-pill" }, "PostgreSQL"));
   panel.appendChild(header);
 
   const form = el("form", { className: "user-form wide" });
   form.appendChild(renderReadonlyField("Email", state.currentUser.email));
-  form.appendChild(renderInput("Display name", "text", state.auth.displayName, "displayName", "Name shown in the app", (value) => {
+  form.appendChild(renderInput("Tên hiển thị", "text", state.auth.displayName, "displayName", "Tên hiển thị trong ứng dụng", (value) => {
     updateAuthField("displayName", value);
   }));
   form.appendChild(renderRoleField());
@@ -713,7 +713,7 @@ function renderProfile() {
     appendStudentFields(form);
   }
 
-  const button = el("button", { type: "submit", className: "primary-button" }, state.auth.isSaving ? "Saving..." : "Save profile");
+  const button = el("button", { type: "submit", className: "primary-button" }, state.auth.isSaving ? "Đang lưu..." : "Lưu hồ sơ");
   button.disabled = state.auth.isSaving;
   form.appendChild(button);
   form.addEventListener("submit", (event) => {
@@ -872,9 +872,9 @@ function renderSurveyQuestion(question) {
 function renderRoleField() {
   const error = state.auth.fieldErrors.role;
   const wrap = el("label", { className: error ? "field has-error" : "field" });
-  wrap.appendChild(el("span", {}, "Role"));
+  wrap.appendChild(el("span", {}, "Vai trò"));
   const select = el("select", { "data-field": "role" });
-  for (const [value, label] of [["student", "Student"], ["researcher", "Researcher"]]) {
+  for (const [value, label] of [["student", "Học sinh / sinh viên"], ["researcher", "Nhà nghiên cứu"]]) {
     const option = el("option", { value }, label);
     if (state.auth.role === value) {
       option.selected = true;
@@ -993,7 +993,7 @@ function renderMessages() {
   }
 
   if (state.isLoading) {
-    const node = renderMessage({ id: "loading", role: "assistant", content: "Thinking..." });
+    const node = renderMessage({ id: "loading", role: "assistant", content: "Đang suy nghĩ..." });
     node.querySelector(".message-body").classList.add("loading");
     list.appendChild(node);
   }
@@ -1003,7 +1003,7 @@ function renderMessages() {
 
 function renderMessage(message) {
   const article = el("article", { className: `message ${message.role}` });
-  const avatar = el("div", { className: "avatar", "aria-hidden": "true" }, message.role === "assistant" ? "AI" : "You");
+  const avatar = el("div", { className: "avatar", "aria-hidden": "true" }, message.role === "assistant" ? "AI" : "Bạn");
   const body = el("div", { className: "message-body" });
   body.appendChild(el("p", {}, message.content));
 
@@ -1015,8 +1015,8 @@ function renderMessage(message) {
 function renderComposer() {
   const form = el("form", { className: "composer" });
   const textarea = el("textarea", {
-    "aria-label": "Message",
-    placeholder: "Type your question...",
+    "aria-label": "Tin nhắn",
+    placeholder: "Nhập câu hỏi của bạn...",
     rows: "2",
   });
   textarea.value = state.input;
@@ -1031,7 +1031,7 @@ function renderComposer() {
     }
   });
 
-  const button = el("button", { type: "submit", "aria-label": "Send message" }, state.isLoading ? "..." : ">");
+  const button = el("button", { type: "submit", "aria-label": "Gửi tin nhắn" }, state.isLoading ? "..." : "Gửi");
   button.disabled = state.isLoading || !state.input.trim();
 
   form.addEventListener("submit", (event) => {
@@ -1082,7 +1082,7 @@ async function handleSubmit() {
 
     const payload = await response.json();
     if (!response.ok) {
-      throw new Error(payload?.detail?.message || "The chat service returned an error.");
+      throw new Error(payload?.detail?.message || "Dịch vụ chatbot trả về lỗi.");
     }
 
     if (payload.session_id) {
@@ -1092,7 +1092,7 @@ async function handleSubmit() {
 
     state.messages.push({ id: createSessionId(), role: "assistant", content: payload.answer });
   } catch (error) {
-    state.error = error instanceof Error ? error.message : "Unable to send the message.";
+    state.error = error instanceof Error ? error.message : "Không gửi được tin nhắn.";
   } finally {
     state.isLoading = false;
     render();
@@ -1116,7 +1116,7 @@ async function register() {
   } else {
     payload.researcher_profile = {};
   }
-  await authenticate("/api/auth/register", payload, "Registration complete.");
+  await authenticate("/api/auth/register", payload, "Đăng ký thành công.");
 }
 
 async function login() {
@@ -1128,7 +1128,7 @@ async function login() {
   await authenticate("/api/auth/login", {
     email: state.auth.email,
     password: state.auth.password,
-  }, "Login complete.");
+  }, "Đăng nhập thành công.");
 }
 
 async function authenticate(path, body, successMessage) {
@@ -1146,14 +1146,14 @@ async function authenticate(path, body, successMessage) {
     });
     const payload = await response.json();
     if (!response.ok) {
-      throw new Error(payload?.detail?.message || "Authentication failed.");
+      throw new Error(payload?.detail?.message || "Xác thực thất bại.");
     }
     applyAuth(payload);
     state.auth.status = successMessage;
     state.activeView = defaultViewForRole(payload.user.role);
     await loadSurveyStatus(false);
   } catch (error) {
-    state.auth.error = error instanceof Error ? error.message : "Authentication failed.";
+    state.auth.error = error instanceof Error ? error.message : "Xác thực thất bại.";
   } finally {
     state.auth.isSaving = false;
     render();
@@ -1166,7 +1166,7 @@ async function loadCurrentUser() {
       headers: authHeaders(),
     });
     if (!response.ok) {
-      throw new Error("Session expired.");
+      throw new Error("Phiên đăng nhập đã hết hạn.");
     }
     state.currentUser = await response.json();
     syncAuthFormFromUser(state.currentUser);
@@ -1213,15 +1213,15 @@ async function saveProfile() {
     });
     const result = await response.json();
     if (!response.ok) {
-      throw new Error(result?.detail?.message || "Unable to save profile.");
+      throw new Error(result?.detail?.message || "Không lưu được hồ sơ.");
     }
     state.currentUser = result;
     syncAuthFormFromUser(result);
     await loadSurveyStatus(false);
     normalizeActiveView();
-    state.auth.status = "Profile saved.";
+    state.auth.status = "Đã lưu hồ sơ.";
   } catch (error) {
-    state.auth.error = error instanceof Error ? error.message : "Unable to save profile.";
+    state.auth.error = error instanceof Error ? error.message : "Không lưu được hồ sơ.";
   } finally {
     state.auth.isSaving = false;
     render();
@@ -1242,7 +1242,7 @@ async function loadSurveyStatus(shouldRender = true) {
     });
     const payload = await response.json();
     if (!response.ok) {
-      throw new Error(payload?.detail?.message || "Unable to load survey status.");
+      throw new Error(payload?.detail?.message || "Không tải được trạng thái khảo sát.");
     }
     state.survey.status = payload;
     if (payload.survey_completed) {
@@ -1253,7 +1253,7 @@ async function loadSurveyStatus(shouldRender = true) {
       state.survey.fieldErrors = {};
     }
   } catch (error) {
-    state.survey.error = error instanceof Error ? error.message : "Unable to load survey status.";
+    state.survey.error = error instanceof Error ? error.message : "Không tải được trạng thái khảo sát.";
   } finally {
     normalizeActiveView();
     if (shouldRender) {
@@ -1275,7 +1275,7 @@ async function loadSurveyQuestions() {
     });
     const payload = await response.json();
     if (!response.ok) {
-      throw new Error(payload?.detail?.message || "Unable to load survey questions.");
+      throw new Error(payload?.detail?.message || "Không tải được câu hỏi khảo sát.");
     }
     state.survey.questions = payload.questions || [];
     state.survey.currentIndex = 0;
@@ -1287,7 +1287,7 @@ async function loadSurveyQuestions() {
     prefillSurveyAnswersFromProfile();
     persistSurveyDraft();
   } catch (error) {
-    state.survey.error = error instanceof Error ? error.message : "Unable to load survey questions.";
+    state.survey.error = error instanceof Error ? error.message : "Không tải được câu hỏi khảo sát.";
   } finally {
     state.survey.isLoading = false;
     render();
@@ -1305,13 +1305,13 @@ async function postponeSurvey() {
     });
     const payload = await response.json();
     if (!response.ok) {
-      throw new Error(payload?.detail?.message || "Unable to postpone survey.");
+      throw new Error(payload?.detail?.message || "Không thể hoãn khảo sát.");
     }
     state.survey.status = payload;
     state.survey.promptDismissed = true;
     normalizeActiveView();
   } catch (error) {
-    state.survey.error = error instanceof Error ? error.message : "Unable to postpone survey.";
+    state.survey.error = error instanceof Error ? error.message : "Không thể hoãn khảo sát.";
   } finally {
     state.survey.isSubmitting = false;
     render();
@@ -1344,7 +1344,7 @@ async function submitSurvey() {
       if (payload?.detail?.fields) {
         state.survey.fieldErrors = payload.detail.fields;
       }
-      throw new Error(payload?.detail?.message || "Unable to submit survey.");
+      throw new Error(payload?.detail?.message || "Không gửi được khảo sát.");
     }
     state.survey.status = payload.status;
     clearSurveyDraft(payload.status?.survey_type);
@@ -1356,7 +1356,7 @@ async function submitSurvey() {
     state.survey.statusMessage = "Khảo sát đã hoàn thành.";
     state.activeView = "dashboard";
   } catch (error) {
-    state.survey.error = error instanceof Error ? error.message : "Unable to submit survey.";
+    state.survey.error = error instanceof Error ? error.message : "Không gửi được khảo sát.";
   } finally {
     state.survey.isSubmitting = false;
     normalizeActiveView();
@@ -1527,23 +1527,23 @@ function appendFieldError(wrap, fieldName) {
 function validateAuthForm(mode) {
   const errors = {};
   if (!state.auth.email.trim()) {
-    errors.email = "Email is required.";
+    errors.email = "Vui lòng nhập email.";
   } else if (!isValidEmail(state.auth.email)) {
-    errors.email = "Enter a valid email address.";
+    errors.email = "Email chưa đúng định dạng.";
   }
 
   if (!state.auth.password.trim()) {
-    errors.password = "Password is required.";
+    errors.password = "Vui lòng nhập mật khẩu.";
   } else if (mode === "register" && state.auth.password.length < 8) {
-    errors.password = "Password must contain at least 8 characters.";
+    errors.password = "Mật khẩu cần có ít nhất 8 ký tự.";
   }
 
   if (mode === "register") {
     if (!state.auth.displayName.trim()) {
-      errors.displayName = "Display name is required.";
+      errors.displayName = "Vui lòng nhập tên hiển thị.";
     }
     if (!state.auth.role) {
-      errors.role = "Role is required.";
+      errors.role = "Vui lòng chọn vai trò.";
     }
     if (state.auth.role === "student") {
       validateStudentFields(errors);
@@ -1556,10 +1556,10 @@ function validateAuthForm(mode) {
 function validateProfileForm() {
   const errors = {};
   if (!state.auth.displayName.trim()) {
-    errors.displayName = "Display name is required.";
+    errors.displayName = "Vui lòng nhập tên hiển thị.";
   }
   if (!state.auth.role) {
-    errors.role = "Role is required.";
+    errors.role = "Vui lòng chọn vai trò.";
   }
   if (state.auth.role === "student") {
     validateStudentFields(errors);
@@ -1575,10 +1575,10 @@ function validateStudentFields(errors) {
     errors.birthDate = "Ngày sinh phải tương ứng độ tuổi từ 5 đến 100.";
   }
   if (!state.auth.studentProfile.gender) {
-    errors.gender = "Gender is required.";
+    errors.gender = "Vui lòng chọn giới tính.";
   }
   if (!state.auth.studentProfile.learnerType) {
-    errors.learnerType = "Learner type is required.";
+    errors.learnerType = "Vui lòng chọn cấp học.";
   }
 }
 

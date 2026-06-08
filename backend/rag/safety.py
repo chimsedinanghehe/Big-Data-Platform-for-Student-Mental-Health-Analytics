@@ -29,15 +29,15 @@ HARM_TO_OTHERS_KEYWORDS = (
 
 
 CRISIS_MESSAGE = (
-    "\n\nIf you or someone else may be in immediate danger, contact local emergency services now. "
-    "In the U.S. or Canada, call or text 988 for crisis support. If you are outside those regions, "
-    "contact your local emergency number, campus security, or a trusted crisis hotline."
+    "\n\nNếu bạn hoặc người khác có thể đang gặp nguy hiểm ngay lúc này, hãy liên hệ dịch vụ khẩn cấp tại nơi bạn sống. "
+    "Nếu ở Mỹ hoặc Canada, bạn có thể gọi hoặc nhắn 988 để được hỗ trợ khủng hoảng. Nếu ở khu vực khác, "
+    "hãy liên hệ số khẩn cấp địa phương, bảo vệ trường, chuyên viên tư vấn hoặc một người lớn đáng tin."
 )
 
 
 DISCLAIMER = (
-    "\n\nNote: I can offer general support, but I cannot replace a counselor, clinician, "
-    "emergency responder, or trusted person who can be with you in real life."
+    "\n\nLưu ý: Mình có thể hỗ trợ thông tin và gợi ý chung, nhưng không thay thế chuyên viên tư vấn, bác sĩ, "
+    "người ứng cứu khẩn cấp hoặc một người đáng tin có thể ở cạnh bạn ngoài đời."
 )
 
 

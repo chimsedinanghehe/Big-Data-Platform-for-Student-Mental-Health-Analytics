@@ -74,15 +74,26 @@ def health_check(response: Response):
 
 @app.get("/ready")
 def readiness_check(response: Response):
+    require_gcs = _env_bool("READINESS_REQUIRE_GCS", False)
+    require_kafka = _env_bool("READINESS_REQUIRE_KAFKA", False)
     checks = {
         "database": _database_ready(),
-        "gcs": _gcs_ready(),
-        "kafka": _kafka_ready(),
+        "gcs": _gcs_ready() if require_gcs else {"ok": True, "skipped": True},
+        "kafka": _kafka_ready() if require_kafka else {"ok": True, "skipped": True},
     }
-    ready = all(check["ok"] for check in checks.values())
+    required_checks = {"database"}
+    if require_gcs:
+        required_checks.add("gcs")
+    if require_kafka:
+        required_checks.add("kafka")
+    ready = all(checks[name]["ok"] for name in required_checks)
     if not ready:
         response.status_code = 503
-    return {"status": "ready" if ready else "not_ready", "checks": checks}
+    return {
+        "status": "ready" if ready else "not_ready",
+        "required_checks": sorted(required_checks),
+        "checks": checks,
+    }
 
 
 def _database_ready() -> dict[str, object]:
@@ -122,3 +133,10 @@ def _kafka_ready() -> dict[str, object]:
             return {"ok": True}
     except Exception as exc:
         return {"ok": False, "error": type(exc).__name__}
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}

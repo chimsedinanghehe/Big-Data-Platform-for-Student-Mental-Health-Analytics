@@ -1,0 +1,10 @@
+[Unit]
+Description=Run MindSchool Big Data refresh every day
+
+[Timer]
+OnCalendar=*-*-* 23:30:00 Asia/Ho_Chi_Minh
+Persistent=true
+Unit=mindschool-bigdata-refresh.service
+
+[Install]
+WantedBy=timers.target

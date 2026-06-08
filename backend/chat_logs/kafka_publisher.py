@@ -64,6 +64,9 @@ def send_chat_turn_to_kafka(
     survey_type: str | None = None,
     survey_completed: bool | None = None,
 ) -> None:
+    if os.getenv("CHAT_KAFKA_ENABLED", "true").strip().lower() not in {"1", "true", "yes", "on"}:
+        return
+
     now = datetime.now(UTC)
     anonymous_session_id = anonymize_session_id(session_id)
     audience_group = user_group or audience_group_for_age(user_age)

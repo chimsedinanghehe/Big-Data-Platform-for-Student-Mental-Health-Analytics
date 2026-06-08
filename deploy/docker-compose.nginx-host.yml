@@ -95,7 +95,10 @@ services:
     logging: *default-logging
     env_file: .env.production
     environment:
+      DASHBOARD_CACHE_DIR: /app/data/.dashboard_cache
       GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/gcp_service_account
+    volumes:
+      - dashboard_cache:/app/data/.dashboard_cache
     secrets:
       - gcp_service_account
     ports:
@@ -119,6 +122,7 @@ services:
 
 volumes:
   postgres_data:
+  dashboard_cache:
 
 secrets:
   gcp_service_account:
