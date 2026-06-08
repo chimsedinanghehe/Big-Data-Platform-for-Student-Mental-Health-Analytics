@@ -24,6 +24,8 @@ backend/.env
 
 **/school_survey_questions_answers.txt
 **/university_survey_questions_answers.txt
+school_survey_questions_answers.txt
+university_survey_questions_answers.txt
 
 # Logs
 logs/
