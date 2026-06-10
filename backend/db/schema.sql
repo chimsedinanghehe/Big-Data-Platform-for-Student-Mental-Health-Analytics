@@ -32,12 +32,8 @@ CREATE INDEX IF NOT EXISTS idx_app_users_role ON app_users(role);
 
 CREATE TABLE IF NOT EXISTS student_profiles (
     user_id UUID PRIMARY KEY REFERENCES app_users(id) ON DELETE CASCADE,
-<<<<<<< HEAD
-    birthday DATE,
-=======
     age INTEGER CHECK (age IS NULL OR age BETWEEN 5 AND 100),
     birth_date DATE,
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
     gender TEXT CHECK (gender IS NULL OR gender IN ('male', 'female', 'other')),
     learner_type TEXT CHECK (
         learner_type IS NULL OR learner_type IN (
@@ -54,17 +50,14 @@ CREATE TABLE IF NOT EXISTS student_profiles (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-<<<<<<< HEAD
-ALTER TABLE student_profiles ADD COLUMN IF NOT EXISTS birthday DATE;
-ALTER TABLE student_profiles DROP COLUMN IF EXISTS age;
-=======
+ALTER TABLE student_profiles ADD COLUMN IF NOT EXISTS age INTEGER CHECK (age IS NULL OR age BETWEEN 5 AND 100);
+ALTER TABLE student_profiles ADD COLUMN IF NOT EXISTS birth_date DATE;
 ALTER TABLE student_profiles ADD COLUMN IF NOT EXISTS survey_required BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE student_profiles ADD COLUMN IF NOT EXISTS survey_completed BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE student_profiles ADD COLUMN IF NOT EXISTS survey_type TEXT;
 ALTER TABLE student_profiles ADD COLUMN IF NOT EXISTS survey_completed_at TIMESTAMPTZ;
 ALTER TABLE student_profiles ADD COLUMN IF NOT EXISTS survey_postponed BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE student_profiles ADD COLUMN IF NOT EXISTS survey_postponed_at TIMESTAMPTZ;
-ALTER TABLE student_profiles ADD COLUMN IF NOT EXISTS birth_date DATE;
 
 DO $$
 BEGIN
@@ -102,7 +95,6 @@ CREATE TABLE IF NOT EXISTS researcher_profiles (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
 ALTER TABLE student_profiles DROP COLUMN IF EXISTS institution_name;
 ALTER TABLE student_profiles DROP COLUMN IF EXISTS grade_or_year;
 ALTER TABLE student_profiles DROP COLUMN IF EXISTS field_of_study;

@@ -225,13 +225,8 @@ def main() -> None:
         spark.readStream.format("kafka")
         .option("kafka.bootstrap.servers", args.kafka_bootstrap_servers)
         .option("subscribe", args.kafka_topic)
-<<<<<<< HEAD
-        .option("startingOffsets", "latest")
-=======
         .option("startingOffsets", args.starting_offsets)
         .option("failOnDataLoss", "false")
-        .load()
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
     )
     if args.kafka_sasl_username and args.kafka_sasl_password:
         jaas_config = (

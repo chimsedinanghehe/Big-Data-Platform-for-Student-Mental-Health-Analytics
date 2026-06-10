@@ -2,29 +2,10 @@ from __future__ import annotations
 
 import json
 import os
-<<<<<<< HEAD
-from datetime import datetime, UTC
-from pathlib import Path
-=======
 from datetime import UTC, datetime
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
 from uuid import uuid4
 
 from confluent_kafka import Producer
-<<<<<<< HEAD
-from dotenv import load_dotenv
-from backend.chat_logs.gcs_writer import anonymize_session_id, mask_pii
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-BACKEND_ROOT = Path(__file__).resolve().parents[1]
-
-load_dotenv(PROJECT_ROOT / ".env")
-load_dotenv(BACKEND_ROOT / ".env", override=True)
-
-KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "student-chat-logs")
-
-# Cấu hình kết nối linh hoạt giữa Local và Confluent Cloud
-=======
 
 from backend.chat_logs.gcs_writer import anonymize_session_id, hash_user_id, mask_pii
 from backend.surveys.questions import audience_group_for_age
@@ -32,7 +13,6 @@ from backend.surveys.questions import audience_group_for_age
 
 CHAT_TOPIC = os.getenv("CHAT_KAFKA_TOPIC", "student-chat-logs")
 
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
 kafka_config = {
     "bootstrap.servers": os.getenv("KAFKA_BOOTSTRAP_SERVERS", "127.0.0.1:9092"),
     "enable.idempotence": True,
@@ -116,15 +96,6 @@ def send_chat_turn_to_kafka(
     }
 
     producer.produce(
-<<<<<<< HEAD
-        topic=KAFKA_TOPIC,
-        value=json.dumps(event, ensure_ascii=False).encode('utf-8'),
-        callback=delivery_report
-    )
-    # Kích hoạt sự kiện gửi đi ngay lập tức khỏi hàng đợi nội bộ của ứng dụng
-    producer.poll(0)
-    producer.flush(5)
-=======
         topic=CHAT_TOPIC,
         key=(anonymous_session_id or event["event_id"]).encode("utf-8"),
         value=json.dumps(event, ensure_ascii=False).encode("utf-8"),
@@ -133,4 +104,3 @@ def send_chat_turn_to_kafka(
     pending_messages = producer.flush(35)
     if pending_messages:
         raise RuntimeError(f"Kafka delivery timed out with {pending_messages} pending message(s).")
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba

@@ -22,24 +22,20 @@ users_router = APIRouter(prefix="/api/users", tags=["users"])
 
 
 class StudentProfilePayload(BaseModel):
-<<<<<<< HEAD
-    birthday: date | None = None
-=======
     age: int | None = Field(default=None, ge=5, le=100)
     birth_date: date | None = None
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
     gender: str | None = None
     learner_type: str | None = None
 
-    @validator("birthday")
+    @validator("birth_date")
     @classmethod
-    def validate_birthday(cls, value: date | None) -> date | None:
+    def validate_birth_date(cls, value: date | None) -> date | None:
         if value is None:
             return None
         today = date.today()
         age = today.year - value.year - ((today.month, today.day) < (value.month, value.day))
         if age < 5 or age > 100:
-            raise ValueError("Birthday must make age between 5 and 100.")
+            raise ValueError("Birth date must make age between 5 and 100.")
         return value
 
     @validator("gender")

@@ -441,18 +441,9 @@ $env:DEMO_RESEARCHER_PASSWORD="<temporary-demo-password>"
 venv\Scripts\python.exe scripts\deployment\seed_demo_users.py
 ```
 
-<<<<<<< HEAD
-Demo logins:
-
-```text
-student.demo@example.com      / StudentDemo123!
-highschool.demo@example.com   / StudentDemo123!
-```
-=======
 Demo users, when required outside production, must be created with
 `scripts/deployment/seed_demo_users.py`. Do not store demo or production
 passwords in repository documentation.
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
 
 ## Safety
 
