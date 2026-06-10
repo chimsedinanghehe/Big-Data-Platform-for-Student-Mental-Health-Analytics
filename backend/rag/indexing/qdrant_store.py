@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 from langchain_qdrant import QdrantVectorStore
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams
@@ -7,8 +9,7 @@ from backend.rag.config import RAGSettings, get_settings
 
 def get_vector_store(embeddings, settings: RAGSettings | None = None) -> QdrantVectorStore:
     settings = settings or get_settings()
-    client = QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key)
-    _ensure_collection(client, settings)
+    client = get_qdrant_client(settings)
 
     return QdrantVectorStore(
         client=client,
@@ -19,8 +20,30 @@ def get_vector_store(embeddings, settings: RAGSettings | None = None) -> QdrantV
 
 def get_qdrant_client(settings: RAGSettings | None = None) -> QdrantClient:
     settings = settings or get_settings()
-    client = QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key)
-    _ensure_collection(client, settings)
+    return _get_qdrant_client(
+        settings.qdrant_url,
+        settings.qdrant_api_key,
+        settings.qdrant_collection,
+        settings.qdrant_vector_size,
+    )
+
+
+@lru_cache(maxsize=4)
+def _get_qdrant_client(
+    qdrant_url: str,
+    qdrant_api_key: str | None,
+    qdrant_collection: str,
+    qdrant_vector_size: int,
+) -> QdrantClient:
+    client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
+    _ensure_collection(
+        client,
+        RAGSettings(
+            qdrant_url=qdrant_url,
+            qdrant_collection=qdrant_collection,
+            qdrant_vector_size=qdrant_vector_size,
+        ),
+    )
     return client
 
 

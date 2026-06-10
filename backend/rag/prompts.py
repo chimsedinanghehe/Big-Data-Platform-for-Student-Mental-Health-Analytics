@@ -80,8 +80,17 @@ Khuyến khích liên hệ chuyên viên tư vấn hoặc chuyên viên y tế n
 Trả lời:"""
 
 
-def build_query_rewrite_prompt(current_question: str, chat_history: list[dict[str, str]] | None = None) -> str:
-    history = format_chat_history(chat_history, max_messages=10, max_chars=1800)
+def build_query_rewrite_prompt(
+    current_question: str,
+    chat_history: list[dict[str, str]] | None = None,
+    max_history_messages: int = 4,
+    max_history_chars: int = 700,
+) -> str:
+    history = format_chat_history(
+        chat_history,
+        max_messages=max_history_messages,
+        max_chars=max_history_chars,
+    )
     return f"""Bạn là trợ lý viết lại truy vấn cho chatbot RAG về sức khỏe tinh thần.
 Hãy viết lại câu hỏi mới nhất của người dùng thành một truy vấn tìm kiếm độc lập, rõ nghĩa.
 Dùng lịch sử trò chuyện để hiểu các từ như "cái này", "nó", "việc đó", "có", "nói thêm".

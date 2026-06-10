@@ -1,3 +1,5 @@
+import re
+
 from backend.rag.config import RAGSettings, get_settings
 from backend.rag.emotion import classify_emotion, emotion_signal_to_metadata, format_emotion_signal
 from backend.rag.generation.openai_client import generate_response, load_llm
@@ -16,7 +18,7 @@ def answer_question(
 ) -> str | dict:
     settings = settings or get_settings()
 
-    print("Classifying emotional signal...")
+    _debug(settings, "Classifying emotional signal...")
     emotion_signal = classify_emotion(question, settings=settings)
     emotional_signal = format_emotion_signal(emotion_signal)
     emotion_metadata = emotion_signal_to_metadata(emotion_signal)
@@ -26,19 +28,19 @@ def answer_question(
         "crisis_type": crisis_type,
     }
 
-    print("Rewriting query...")
-    standalone_query = rewrite_query(question, chat_history=chat_history)
+    _debug(settings, "Rewriting query...")
+    standalone_query = rewrite_query(question, chat_history=chat_history, settings=settings)
 
-    print("Loading embedding model...")
+    _debug(settings, "Loading embedding model...")
     embeddings = load_embedding_model(settings=settings)
 
-    print("Connecting to Qdrant vector store...")
+    _debug(settings, "Connecting to Qdrant vector store...")
     vector_store = get_vector_store(embeddings, settings=settings)
 
-    print("Creating retriever...")
+    _debug(settings, "Creating retriever...")
     retriever = get_retriever(vector_store, settings=settings)
 
-    print("Retrieving relevant documents...")
+    _debug(settings, "Retrieving relevant documents...")
     docs = retriever.invoke(standalone_query)
 
     if not docs:
@@ -57,12 +59,16 @@ def answer_question(
             }
         return answer
 
-    context = format_context(docs, max_chars=settings.max_context_chars)
+    context = format_context(
+        docs,
+        max_chars=settings.max_context_chars,
+        max_doc_chars=settings.max_context_doc_chars,
+    )
 
-    print("Loading OpenAI response model...")
+    _debug(settings, "Loading OpenAI response model...")
     llm = load_llm(settings=settings)
 
-    print("Generating response...")
+    _debug(settings, "Generating response...")
     answer = generate_response(
         llm=llm,
         context=context,
@@ -92,16 +98,19 @@ def ask_question(question: str, chat_history: list[dict[str, str]] | None = None
     return answer_question(question, chat_history=chat_history)
 
 
-def format_context(docs, max_chars: int | None = None) -> str:
+def format_context(docs, max_chars: int | None = None, max_doc_chars: int | None = None) -> str:
     sections = []
     for index, doc in enumerate(docs, start=1):
-        metadata = doc.metadata
+        metadata = doc.metadata or {}
         label = _source_label(metadata, index)
-        sections.append(f"[{label}]\n{doc.page_content}")
+        content = _compact_content(doc.page_content, max_chars=max_doc_chars)
+        if not content:
+            continue
+        sections.append(f"[{label}]\n{content}")
     context = "\n\n".join(sections)
     if max_chars is None or len(context) <= max_chars:
         return context
-    return context[:max_chars].rsplit(" ", maxsplit=1)[0].strip() + "..."
+    return _truncate_at_word(context, max_chars)
 
 
 def add_source_attribution(answer: str, docs) -> str:
@@ -117,7 +126,7 @@ def _source_labels(docs) -> list[str]:
     sources = []
     seen = set()
     for index, doc in enumerate(docs, start=1):
-        label = _source_label(doc.metadata, index)
+        label = _source_label(doc.metadata or {}, index)
         if label in seen:
             continue
         seen.add(label)
@@ -133,3 +142,30 @@ def _source_label(metadata: dict, fallback_index: int) -> str:
 
     page_label = "trang chưa rõ" if page is None else f"trang {int(page) + 1}"
     return f"{source_file}, {page_label}, {chunk_id}, {doc_type}"
+
+
+def _compact_content(content: str, max_chars: int | None = None) -> str:
+    text = re.sub(r"\s+", " ", str(content or "")).strip()
+    if not text:
+        return ""
+    if max_chars is None or len(text) <= max_chars:
+        return text
+    return _truncate_at_sentence(text, max_chars)
+
+
+def _truncate_at_sentence(text: str, max_chars: int) -> str:
+    clipped = text[:max_chars].strip()
+    sentence_end = max(clipped.rfind("."), clipped.rfind("!"), clipped.rfind("?"), clipped.rfind("。"))
+    if sentence_end >= max_chars * 0.55:
+        return clipped[: sentence_end + 1].strip()
+    return _truncate_at_word(text, max_chars)
+
+
+def _truncate_at_word(text: str, max_chars: int) -> str:
+    clipped = text[:max_chars].rsplit(" ", maxsplit=1)[0].strip()
+    return f"{clipped}..." if clipped else text[:max_chars].strip()
+
+
+def _debug(settings: RAGSettings, message: str) -> None:
+    if settings.debug_rag:
+        print(message)

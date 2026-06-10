@@ -78,11 +78,7 @@ def ask_rag(request: RAGAskRequest, authorization: str | None = Header(default=N
             ) from exc
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-<<<<<<< HEAD
-            detail={"error": "rag_runtime_error", "message": str(exc)},
-=======
             detail={"error": "rag_runtime_error", "message": "Dịch vụ chatbot gặp lỗi khi xử lý câu hỏi."},
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
         ) from exc
     except (ApiException, ResponseHandlingException, UnexpectedResponse) as exc:
         raise HTTPException(
@@ -97,11 +93,7 @@ def ask_rag(request: RAGAskRequest, authorization: str | None = Header(default=N
             ) from exc
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-<<<<<<< HEAD
-            detail={"error": "internal_error", "message": str(exc)},
-=======
             detail={"error": "internal_error", "message": "Chatbot gặp lỗi ngoài dự kiến."},
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
         ) from exc
 
     if isinstance(result, dict):

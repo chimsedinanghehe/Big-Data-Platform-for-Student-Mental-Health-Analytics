@@ -1,3 +1,4 @@
+from functools import lru_cache
 from typing import Any
 
 from backend.rag.config import RAGSettings, get_settings
@@ -8,13 +9,17 @@ def load_llm(settings: RAGSettings | None = None) -> Any:
     settings = settings or get_settings()
     if not settings.openai_api_key:
         raise RuntimeError("OPENAI_API_KEY is required for OpenAI generation.")
+    return _load_openai_client(settings.openai_api_key)
 
+
+@lru_cache(maxsize=4)
+def _load_openai_client(api_key: str) -> Any:
     try:
         from openai import OpenAI
     except ImportError as exc:
         raise RuntimeError("The openai package is required. Install it with: pip install openai") from exc
 
-    return OpenAI(api_key=settings.openai_api_key)
+    return OpenAI(api_key=api_key)
 
 
 def generate_text(prompt: str, settings: RAGSettings | None = None, client: Any | None = None) -> str:

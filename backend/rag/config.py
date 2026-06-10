@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from functools import lru_cache
 import os
 from pathlib import Path
 
@@ -28,9 +29,15 @@ class RAGSettings:
     chunk_size: int = 500
     chunk_overlap: int = 100
     retrieval_k: int = 3
-    max_context_chars: int = 3000
-    max_history_messages: int = 6
-    max_history_chars: int = 1500
+    retrieval_fetch_k: int = 6
+    retrieval_score_threshold: float = 0.0
+    max_context_chars: int = 1800
+    max_context_doc_chars: int = 650
+    max_history_messages: int = 4
+    max_history_chars: int = 900
+    enable_query_rewrite: bool = True
+    query_rewrite_max_history_messages: int = 4
+    query_rewrite_max_history_chars: int = 700
     emotion_model_path: str | None = None
     emotion_confidence_threshold: float = 0.6
     ollama_num_ctx: int = 2048
@@ -81,6 +88,7 @@ def _env_bool(name: str, default: bool) -> bool:
     raise RuntimeError(f"{name} must be a boolean.")
 
 
+@lru_cache(maxsize=1)
 def get_settings() -> RAGSettings:
     defaults = RAGSettings()
     return RAGSettings(
@@ -98,9 +106,24 @@ def get_settings() -> RAGSettings:
         chunk_size=_env_int("RAG_CHUNK_SIZE", defaults.chunk_size),
         chunk_overlap=_env_int("RAG_CHUNK_OVERLAP", defaults.chunk_overlap),
         retrieval_k=_env_int("RAG_RETRIEVAL_K", defaults.retrieval_k),
+        retrieval_fetch_k=_env_int("RAG_RETRIEVAL_FETCH_K", defaults.retrieval_fetch_k),
+        retrieval_score_threshold=_env_float(
+            "RAG_RETRIEVAL_SCORE_THRESHOLD",
+            defaults.retrieval_score_threshold,
+        ),
         max_context_chars=_env_int("RAG_MAX_CONTEXT_CHARS", defaults.max_context_chars),
+        max_context_doc_chars=_env_int("RAG_MAX_CONTEXT_DOC_CHARS", defaults.max_context_doc_chars),
         max_history_messages=_env_int("RAG_MAX_HISTORY_MESSAGES", defaults.max_history_messages),
         max_history_chars=_env_int("RAG_MAX_HISTORY_CHARS", defaults.max_history_chars),
+        enable_query_rewrite=_env_bool("RAG_ENABLE_QUERY_REWRITE", defaults.enable_query_rewrite),
+        query_rewrite_max_history_messages=_env_int(
+            "RAG_QUERY_REWRITE_MAX_HISTORY_MESSAGES",
+            defaults.query_rewrite_max_history_messages,
+        ),
+        query_rewrite_max_history_chars=_env_int(
+            "RAG_QUERY_REWRITE_MAX_HISTORY_CHARS",
+            defaults.query_rewrite_max_history_chars,
+        ),
         emotion_model_path=os.getenv("RAG_EMOTION_MODEL_PATH", defaults.emotion_model_path),
         emotion_confidence_threshold=_env_float(
             "RAG_EMOTION_CONFIDENCE_THRESHOLD",
