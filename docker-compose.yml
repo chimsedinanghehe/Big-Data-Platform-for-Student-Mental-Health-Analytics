@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: student-mental-health-postgres
+    environment:
+      POSTGRES_DB: student_mental_health_app
+      POSTGRES_USER: student_app
+      POSTGRES_PASSWORD: student_app_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U student_app -d student_mental_health_app"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

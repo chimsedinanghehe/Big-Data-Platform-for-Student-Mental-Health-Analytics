@@ -1,0 +1,51 @@
+.block-container {
+    padding-top: 1rem;
+    padding-bottom: 3rem;
+}
+
+.kpi-card,
+.method-box,
+.soft-box,
+.note-box {
+    border-radius: 4px;
+    border: 1px solid #D9E2EC;
+    background: #FFFFFF;
+    color: #2F3B45;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+}
+
+.kpi-card {
+    padding: 18px 18px 16px;
+    min-height: 124px;
+}
+
+.kpi-label,
+.kpi-subtitle,
+.muted {
+    color: #7B8794;
+}
+
+.kpi-label {
+    font-size: 0.86rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.kpi-value {
+    color: #2F3B45;
+    font-size: 2rem;
+    font-weight: 850;
+    line-height: 1.2;
+}
+
+.kpi-subtitle {
+    font-size: 0.86rem;
+    margin-top: 8px;
+}
+
+.method-box {
+    border-left: 5px solid #2D9CDB;
+    padding: 14px 16px;
+    margin: 12px 0 20px;
+    line-height: 1.55;
+}
