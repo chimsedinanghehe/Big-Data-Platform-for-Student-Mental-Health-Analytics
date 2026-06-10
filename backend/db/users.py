@@ -66,7 +66,7 @@ def create_user(
     if len(password) < 8:
         raise ValueError("Password must contain at least 8 characters.")
     normalized_profile = profile or {}
-    if normalized_role == "student" and _profile_age(normalized_profile) is None:
+    if normalized_profile and _profile_age(normalized_profile) is None:
         raise ValueError("Birth date is required for student survey routing.")
     survey_required, survey_type = derive_survey_state_for_profile(
         normalized_role,
@@ -249,7 +249,7 @@ def update_user_profile(
     parsed_user_id = UUID(user_id)
     normalized_role = normalize_role(role)
     normalized_name = display_name.strip()
-    if normalized_role == "student" and _profile_age(profile) is None:
+    if profile and _profile_age(profile) is None:
         raise ValueError("Birth date is required for student survey routing.")
     survey_required, survey_type = derive_survey_state_for_profile(
         normalized_role,
@@ -345,8 +345,8 @@ def normalize_role(role: str) -> str:
 
 
 def _upsert_profile(cursor: object, user_id: UUID, role: str, profile: dict) -> None:
-    if role == "student":
-        birth_date = _optional_date(profile.get("birth_date"))
+    if role == "user" and profile:
+        birth_date = _optional_date(profile.get("birth_date") or profile.get("birthday"))
         age = _profile_age(profile)
         gender = _optional_choice(profile.get("gender"), VALID_GENDERS, "gender")
         learner_type = _optional_choice(profile.get("learner_type"), VALID_LEARNER_TYPES, "learner_type")
@@ -464,14 +464,6 @@ def _optional_text(value: object) -> str | None:
 def _optional_date(value: object) -> date | None:
     if value in {None, ""}:
         return None
-    if isinstance(value, date):
-        return value
-    return date.fromisoformat(str(value))
-
-
-def _optional_date(value: object) -> date | None:
-    if value in {None, ""}:
-        return None
     if isinstance(value, date) and not isinstance(value, datetime):
         return value
     return date.fromisoformat(str(value))
@@ -488,7 +480,7 @@ def _age_from_birth_date(birth_date: date | None, today: date | None = None) -> 
 
 
 def _profile_age(profile: dict) -> int | None:
-    birth_date = _optional_date(profile.get("birth_date"))
+    birth_date = _optional_date(profile.get("birth_date") or profile.get("birthday"))
     if birth_date is not None:
         return _age_from_birth_date(birth_date)
     return _optional_int(profile.get("age"))

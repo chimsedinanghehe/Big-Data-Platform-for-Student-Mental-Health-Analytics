@@ -23,7 +23,7 @@ DEMO_USERS = [
         "display_name": "Student Demo",
         "role": "user",
         "profile": {
-            "birthday": "2006-01-01",
+            "birth_date": "2006-01-01",
             "gender": "female",
             "learner_type": "university",
         },
@@ -34,7 +34,7 @@ DEMO_USERS = [
         "display_name": "High School Demo",
         "role": "user",
         "profile": {
-            "birthday": "2010-01-01",
+            "birth_date": "2010-01-01",
             "gender": "other",
             "learner_type": "high_school",
         },

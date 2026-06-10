@@ -35,12 +35,8 @@ const state = {
     focusField: "",
     isSaving: false,
     studentProfile: {
-<<<<<<< HEAD
-      birthday: "",
-=======
       age: "",
       birthDate: "",
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
       gender: "other",
       learnerType: "university",
     },
@@ -385,15 +381,11 @@ function renderAuthWorkspace() {
 function renderWorkspace() {
   normalizeActiveView();
 
-<<<<<<< HEAD
-  const workspace = el("section", { className: "workspace app-workspace role-user" });
-=======
   if (state.activeView === "survey") {
     return renderSurveyWorkspace();
   }
 
-  const workspace = el("section", { className: `workspace app-workspace role-${state.currentUser.role}` });
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
+  const workspace = el("section", { className: "workspace app-workspace role-user" });
   workspace.appendChild(renderTopBar());
 
   const body = el("div", { className: "app-body" });
@@ -437,23 +429,13 @@ function renderSurveyWorkspace() {
 function renderTopBar() {
   const header = el("header", { className: "topbar" });
   const titleWrap = el("div");
-<<<<<<< HEAD
-  titleWrap.appendChild(el("h1", {}, "Student Mental Health Platform"));
-  titleWrap.appendChild(el("p", {}, "Chatbot, analytics dashboard, and account profile."));
+  titleWrap.appendChild(el("h1", {}, "MindSchool - Nền tảng sức khỏe tinh thần"));
+  titleWrap.appendChild(el("p", {}, "Chatbot, khảo sát tâm lý và dashboard phân tích."));
   header.appendChild(titleWrap);
 
   const right = el("div", { className: "header-actions" });
   right.appendChild(el("div", { className: "account-chip" }, state.currentUser.display_name));
-  const logoutButton = el("button", { type: "button", className: "secondary-button" }, "Logout");
-=======
-  titleWrap.appendChild(el("h1", {}, "MindSchool - Nền tảng sức khỏe tinh thần"));
-  titleWrap.appendChild(el("p", {}, state.currentUser.role === "student" ? "Chatbot, khảo sát tâm lý và dashboard." : "Dashboard phân tích và hồ sơ tài khoản."));
-  header.appendChild(titleWrap);
-
-  const right = el("div", { className: "header-actions" });
-  right.appendChild(el("div", { className: "account-chip" }, `${state.currentUser.display_name} | ${state.currentUser.role}`));
   const logoutButton = el("button", { type: "button", className: "secondary-button" }, "Đăng xuất");
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
   logoutButton.addEventListener("click", logout);
   right.appendChild(logoutButton);
   header.appendChild(right);
@@ -506,31 +488,20 @@ function renderSideNavItem(item) {
 }
 
 function getNavItems() {
-<<<<<<< HEAD
-=======
-  if (state.currentUser.role === "student") {
-    const surveyRequired = isSurveyRequired();
-    const surveyCompleted = isSurveyCompleted();
-    const items = [{ view: "chat", label: "Chatbot tư vấn" }];
-    if (surveyRequired && !surveyCompleted) {
-      items.push({ view: "survey", label: "Khảo sát tâm lý" });
-    }
-    items.push({ view: "dashboard", label: "Dashboard", locked: surveyRequired && !surveyCompleted });
-    items.push({ view: "profile", label: "Hồ sơ" });
-    return items;
+  const surveyRequired = isSurveyRequired();
+  const surveyCompleted = isSurveyCompleted();
+  const items = [{ view: "chat", label: "Chatbot tư vấn" }];
+  if (surveyRequired && !surveyCompleted) {
+    items.push({ view: "survey", label: "Khảo sát tâm lý" });
   }
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
-  return [
-    { view: "chat", label: "Chatbot" },
-    { view: "dashboard", label: "Dashboard" },
-    { view: "profile", label: "Hồ sơ" },
-  ];
+  items.push({ view: "dashboard", label: "Dashboard", locked: surveyRequired && !surveyCompleted });
+  items.push({ view: "profile", label: "Hồ sơ" });
+  return items;
 }
 
 function getAllowedViews() {
   const views = getNavItems().filter((item) => !item.locked).map((item) => item.view);
   if (
-    state.currentUser?.role === "student" &&
     state.survey.status?.survey_required &&
     !state.survey.status?.survey_completed &&
     !views.includes("survey")
@@ -570,8 +541,7 @@ function renderActiveView() {
 
 function shouldShowSurveyPrompt() {
   return Boolean(
-    state.currentUser?.role === "student" &&
-      state.survey.status?.show_survey_prompt &&
+    state.survey.status?.show_survey_prompt &&
       !state.survey.promptDismissed,
   );
 }
@@ -642,11 +612,7 @@ function renderAuth() {
   }));
 
   if (state.authMode === "register") {
-<<<<<<< HEAD
-    form.appendChild(renderInput("Name", "text", state.auth.displayName, "displayName", "Name shown in the app", (value) => {
-=======
     form.appendChild(renderInput("Tên hiển thị", "text", state.auth.displayName, "displayName", "Tên hiển thị trong ứng dụng", (value) => {
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
       updateAuthField("displayName", value);
     }));
     appendStudentFields(form);
@@ -728,11 +694,7 @@ function renderProfile() {
 
   const form = el("form", { className: "user-form wide" });
   form.appendChild(renderReadonlyField("Email", state.currentUser.email));
-<<<<<<< HEAD
-  form.appendChild(renderInput("Name", "text", state.auth.displayName, "displayName", "Name shown in the app", (value) => {
-=======
   form.appendChild(renderInput("Tên hiển thị", "text", state.auth.displayName, "displayName", "Tên hiển thị trong ứng dụng", (value) => {
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
     updateAuthField("displayName", value);
   }));
   appendStudentFields(form);
@@ -750,12 +712,6 @@ function renderProfile() {
   return panel;
 }
 
-<<<<<<< HEAD
-function appendStudentFields(form) {
-  form.appendChild(renderInput("Birthday", "date", state.auth.studentProfile.birthday, "birthday", "YYYY-MM-DD", (value) => {
-    state.auth.studentProfile.birthday = value;
-    clearFieldError("birthday");
-=======
 function renderSurvey() {
   if (!state.survey.questions.length && !state.survey.isLoading && !state.survey.error) {
     loadSurveyQuestions();
@@ -899,36 +855,11 @@ function renderSurveyQuestion(question) {
   return wrap;
 }
 
-function renderRoleField() {
-  const error = state.auth.fieldErrors.role;
-  const wrap = el("label", { className: error ? "field has-error" : "field" });
-  wrap.appendChild(el("span", {}, "Vai trò"));
-  const select = el("select", { "data-field": "role" });
-  for (const [value, label] of [["student", "Học sinh / sinh viên"], ["researcher", "Nhà nghiên cứu"]]) {
-    const option = el("option", { value }, label);
-    if (state.auth.role === value) {
-      option.selected = true;
-    }
-    select.appendChild(option);
-  }
-  select.addEventListener("change", (event) => {
-    state.auth.role = event.target.value;
-    clearFieldError("role");
-    state.auth.fieldErrors = {};
-    state.auth.focusField = "";
-    render();
-  });
-  wrap.appendChild(select);
-  appendFieldError(wrap, "role");
-  return wrap;
-}
-
 function appendStudentFields(form) {
   form.appendChild(renderInput("Ngày tháng năm sinh", "date", state.auth.studentProfile.birthDate, "birthDate", "", (value) => {
     state.auth.studentProfile.birthDate = value;
     state.auth.studentProfile.age = calculateAgeFromBirthDate(value) ?? "";
     clearFieldError("birthDate");
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
   }));
   const calculatedAge = calculateAgeFromBirthDate(state.auth.studentProfile.birthDate);
   if (calculatedAge !== null) {
@@ -1143,16 +1074,7 @@ async function register() {
     role: "user",
     student_profile: buildStudentProfilePayload(),
   };
-<<<<<<< HEAD
-  await authenticate("/api/auth/register", payload, "Registration complete.");
-=======
-  if (state.auth.role === "student") {
-    payload.student_profile = buildStudentProfilePayload();
-  } else {
-    payload.researcher_profile = {};
-  }
   await authenticate("/api/auth/register", payload, "Đăng ký thành công.");
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
 }
 
 async function login() {
@@ -1186,12 +1108,8 @@ async function authenticate(path, body, successMessage) {
     }
     applyAuth(payload);
     state.auth.status = successMessage;
-<<<<<<< HEAD
     state.activeView = defaultView();
-=======
-    state.activeView = defaultViewForRole(payload.user.role);
     await loadSurveyStatus(false);
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
   } catch (error) {
     state.auth.error = error instanceof Error ? error.message : "Xác thực thất bại.";
   } finally {
@@ -1265,7 +1183,7 @@ async function saveProfile() {
 }
 
 async function loadSurveyStatus(shouldRender = true) {
-  if (!state.authToken || !state.currentUser || state.currentUser.role !== "student") {
+  if (!state.authToken || !state.currentUser) {
     resetSurveyState();
     if (shouldRender) {
       render();
@@ -1484,12 +1402,8 @@ function logout(shouldRender = true) {
   state.authToken = "";
   state.currentUser = null;
   resetAuthForm();
-<<<<<<< HEAD
-  state.activeView = "chat";
-=======
   resetSurveyState();
-  state.activeView = "dashboard";
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
+  state.activeView = "chat";
   state.authChecking = false;
   localStorage.removeItem(AUTH_TOKEN_KEY);
   if (shouldRender) {
@@ -1503,12 +1417,8 @@ function syncAuthFormFromUser(user) {
   state.auth.role = "user";
   const profile = user.profile || {};
   state.auth.studentProfile = {
-<<<<<<< HEAD
-    birthday: profile.birthday ?? "",
-=======
     age: profile.age ?? "",
     birthDate: profile.birth_date || "",
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
     gender: profile.gender || "other",
     learnerType: profile.learner_type || "university",
   };
@@ -1530,12 +1440,8 @@ function resetAuthForm() {
   state.auth.focusField = "";
   state.auth.isSaving = false;
   state.auth.studentProfile = {
-<<<<<<< HEAD
-    birthday: "",
-=======
     age: "",
     birthDate: "",
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
     gender: "other",
     learnerType: "university",
   };
@@ -1590,16 +1496,7 @@ function validateAuthForm(mode) {
     if (!state.auth.displayName.trim()) {
       errors.displayName = "Vui lòng nhập tên hiển thị.";
     }
-<<<<<<< HEAD
     validateStudentFields(errors);
-=======
-    if (!state.auth.role) {
-      errors.role = "Vui lòng chọn vai trò.";
-    }
-    if (state.auth.role === "student") {
-      validateStudentFields(errors);
-    }
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
   }
 
   return applyValidationErrors(errors);
@@ -1610,36 +1507,16 @@ function validateProfileForm() {
   if (!state.auth.displayName.trim()) {
     errors.displayName = "Vui lòng nhập tên hiển thị.";
   }
-<<<<<<< HEAD
   validateStudentFields(errors);
-=======
-  if (!state.auth.role) {
-    errors.role = "Vui lòng chọn vai trò.";
-  }
-  if (state.auth.role === "student") {
-    validateStudentFields(errors);
-  }
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
   return applyValidationErrors(errors);
 }
 
 function validateStudentFields(errors) {
-<<<<<<< HEAD
-  const birthday = String(state.auth.studentProfile.birthday || "").trim();
-  const age = calculateAge(birthday);
-  if (!birthday) {
-    errors.birthday = "Birthday is required.";
-  } else if (age === null) {
-    errors.birthday = "Enter a valid birthday.";
-  } else if (age < 5 || age > 100) {
-    errors.birthday = "Birthday must make age between 5 and 100.";
-=======
   const age = calculateAgeFromBirthDate(state.auth.studentProfile.birthDate);
   if (!state.auth.studentProfile.birthDate) {
     errors.birthDate = "Vui lòng nhập ngày tháng năm sinh.";
   } else if (age === null || age < 5 || age > 100) {
     errors.birthDate = "Ngày sinh phải tương ứng độ tuổi từ 5 đến 100.";
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
   }
   if (!state.auth.studentProfile.gender) {
     errors.gender = "Vui lòng chọn giới tính.";
@@ -1665,12 +1542,8 @@ function isValidEmail(value) {
 function buildStudentProfilePayload() {
   const age = calculateAgeFromBirthDate(state.auth.studentProfile.birthDate);
   return {
-<<<<<<< HEAD
-    birthday: optionalDate(state.auth.studentProfile.birthday),
-=======
     birth_date: state.auth.studentProfile.birthDate || null,
     age,
->>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
     gender: state.auth.studentProfile.gender,
     learner_type: state.auth.studentProfile.learnerType,
   };
@@ -1697,39 +1570,6 @@ function authHeaders() {
   return {
     Authorization: `Bearer ${state.authToken}`,
   };
-}
-
-function optionalDate(value) {
-  if (value === null || value === undefined || String(value).trim() === "") {
-    return null;
-  }
-  return String(value).trim();
-}
-
-function calculateAge(value) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return null;
-  }
-  const [year, month, day] = value.split("-").map(Number);
-  const birthday = new Date(year, month - 1, day);
-  if (
-    Number.isNaN(birthday.getTime()) ||
-    birthday.getFullYear() !== year ||
-    birthday.getMonth() !== month - 1 ||
-    birthday.getDate() !== day
-  ) {
-    return null;
-  }
-
-  const today = new Date();
-  let age = today.getFullYear() - birthday.getFullYear();
-  const hasHadBirthdayThisYear =
-    today.getMonth() > birthday.getMonth() ||
-    (today.getMonth() === birthday.getMonth() && today.getDate() >= birthday.getDate());
-  if (!hasHadBirthdayThisYear) {
-    age -= 1;
-  }
-  return age;
 }
 
 function el(tagName, attributes = {}, text = "") {

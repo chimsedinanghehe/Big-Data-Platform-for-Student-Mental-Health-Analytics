@@ -16,7 +16,7 @@ class SurveyAlreadyCompletedError(RuntimeError):
 
 
 def derive_survey_state_for_profile(role: str, age: int | None) -> tuple[bool, str | None]:
-    if role != "student" or age is None:
+    if age is None:
         return False, None
     return True, survey_type_for_age(age)
 
@@ -35,7 +35,7 @@ class SurveyStatus:
 
 
 def get_survey_status(*, user_id: str, role: str) -> SurveyStatus:
-    if role != "student":
+    if role not in {"user", "student"}:
         return SurveyStatus(
             user_id=user_id,
             age=None,
@@ -73,7 +73,7 @@ def get_survey_status(*, user_id: str, role: str) -> SurveyStatus:
 
 
 def postpone_survey(*, user_id: str, role: str) -> SurveyStatus:
-    if role != "student":
+    if role not in {"user", "student"}:
         raise ValueError("Survey is only required for student accounts.")
 
     parsed_user_id = UUID(user_id)
@@ -125,7 +125,7 @@ def postpone_survey(*, user_id: str, role: str) -> SurveyStatus:
 
 
 def submit_survey_response(*, user_id: str, role: str, answers: dict) -> SurveyStatus:
-    if role != "student":
+    if role not in {"user", "student"}:
         raise ValueError("Survey is only required for student accounts.")
 
     parsed_user_id = UUID(user_id)
