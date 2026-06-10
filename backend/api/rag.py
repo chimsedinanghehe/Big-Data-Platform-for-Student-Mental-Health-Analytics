@@ -59,7 +59,7 @@ def ask_rag(request: RAGAskRequest) -> RAGAskResponse:
             ) from exc
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"error": "rag_runtime_error", "message": "RAG service failed while processing the request."},
+            detail={"error": "rag_runtime_error", "message": str(exc)},
         ) from exc
     except (ApiException, ResponseHandlingException, UnexpectedResponse) as exc:
         raise HTTPException(
@@ -74,7 +74,7 @@ def ask_rag(request: RAGAskRequest) -> RAGAskResponse:
             ) from exc
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"error": "internal_error", "message": "Unexpected RAG service error."},
+            detail={"error": "internal_error", "message": str(exc)},
         ) from exc
 
     if isinstance(result, dict):

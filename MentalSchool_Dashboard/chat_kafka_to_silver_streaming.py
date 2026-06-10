@@ -17,7 +17,7 @@ from pyspark.sql import types as T
 
 
 KAFKA_BOOTSTRAP_SERVERS = "<KAFKA_BOOTSTRAP_SERVERS>"
-KAFKA_TOPIC = "chat-events"
+KAFKA_TOPIC = "student-chat-logs"
 CHECKPOINT_PATH = "gs://student-mental-health-lake-nhom1-2026/checkpoints/chat_kafka_to_silver/"
 SILVER_CHAT_PATH = "gs://student-mental-health-lake-nhom1-2026/silver/anonymized_chat/"
 
@@ -47,6 +47,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Stream chatbot Kafka events to Silver anonymized chat.")
     parser.add_argument("--kafka-bootstrap-servers", default=KAFKA_BOOTSTRAP_SERVERS)
     parser.add_argument("--kafka-topic", default=KAFKA_TOPIC)
+    parser.add_argument("--kafka-sasl-username")
+    parser.add_argument("--kafka-sasl-password")
     parser.add_argument("--checkpoint-path", default=CHECKPOINT_PATH)
     parser.add_argument("--output-path", default=SILVER_CHAT_PATH)
     return parser.parse_args()
@@ -163,8 +165,19 @@ def main() -> None:
         .option("kafka.bootstrap.servers", args.kafka_bootstrap_servers)
         .option("subscribe", args.kafka_topic)
         .option("startingOffsets", "latest")
-        .load()
     )
+    if args.kafka_sasl_username and args.kafka_sasl_password:
+        jaas_config = (
+            "org.apache.kafka.common.security.plain.PlainLoginModule required "
+            f'username="{args.kafka_sasl_username}" '
+            f'password="{args.kafka_sasl_password}";'
+        )
+        kafka_events = (
+            kafka_events.option("kafka.security.protocol", "SASL_SSL")
+            .option("kafka.sasl.mechanism", "PLAIN")
+            .option("kafka.sasl.jaas.config", jaas_config)
+        )
+    kafka_events = kafka_events.load()
 
     silver = clean_chat_events(kafka_events).withWatermark("timestamp", "24 hours").dropDuplicates(["event_id"])
 

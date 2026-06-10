@@ -1,9 +1,19 @@
 import json
 import os
 from datetime import datetime, UTC
+from pathlib import Path
 from uuid import uuid4
 from confluent_kafka import Producer
+from dotenv import load_dotenv
 from backend.chat_logs.gcs_writer import anonymize_session_id, mask_pii
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+
+load_dotenv(PROJECT_ROOT / ".env")
+load_dotenv(BACKEND_ROOT / ".env", override=True)
+
+KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "student-chat-logs")
 
 # Cấu hình kết nối linh hoạt giữa Local và Confluent Cloud
 kafka_config = {
@@ -59,9 +69,10 @@ def send_chat_turn_to_kafka(
     
     # Đẩy dữ liệu vào Kafka dưới dạng chuỗi byte JSON
     producer.produce(
-        topic='student-chat-logs',
+        topic=KAFKA_TOPIC,
         value=json.dumps(event, ensure_ascii=False).encode('utf-8'),
         callback=delivery_report
     )
     # Kích hoạt sự kiện gửi đi ngay lập tức khỏi hàng đợi nội bộ của ứng dụng
     producer.poll(0)
+    producer.flush(5)

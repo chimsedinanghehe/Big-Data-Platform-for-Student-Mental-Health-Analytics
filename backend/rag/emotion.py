@@ -53,7 +53,12 @@ def classify_emotion(text: str, settings: RAGSettings | None = None, top_k: int 
     if not settings.emotion_model_path:
         return None
 
-    tokenizer, model = _load_classifier(settings.emotion_model_path)
+    try:
+        tokenizer, model = _load_classifier(settings.emotion_model_path)
+    except Exception as exc:
+        print(f"Emotion classifier disabled: {exc}")
+        return None
+
     inputs = tokenizer(
         text,
         return_tensors="pt",
