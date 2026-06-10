@@ -2,24 +2,34 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
+from datetime import UTC, datetime
 from io import BytesIO
+from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
 import pandas as pd
 
+from dashboard_cache import atomic_pickle_dump, dashboard_cache_dir
 
-PROJECT_ID = "student-mental-health-496205"
-BUCKET_NAME = "student-mental-health-lake-nhom1-2026"
+
+PROJECT_ID = os.getenv("GCP_PROJECT_ID", "student-mental-health-496205")
+BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "student-mental-health-lake-nhom1-2026")
+CACHE_SCHEMA_VERSION = "chat_gold_cache_v1"
+GOLD_CHAT_CURRENT_MANIFEST = "gold/dashboard_tables/_manifests/chat_current.json"
 
 CHAT_GOLD_TABLE_PREFIXES = {
     "chat_hourly_metrics": "gold/dashboard_tables/chat_hourly_metrics/",
     "chat_risk_summary": "gold/dashboard_tables/chat_risk_summary/",
     "chat_topic_summary": "gold/dashboard_tables/chat_topic_summary/",
+    "chat_model_usage": "gold/dashboard_tables/chat_model_usage/",
     "chat_construct_summary": "gold/dashboard_tables/chat_construct_summary/",
     "chat_sentiment_summary": "gold/sentiment_summary/chat_sentiment_summary/",
 }
 
-OPTIONAL_CHAT_GOLD_TABLES = {"chat_construct_summary"}
+REAL_CHAT_AUDIENCE_GROUPS = {"school", "university"}
 
 
 def create_storage_client():
@@ -67,6 +77,76 @@ def read_parquet_blobs(blob_names: Iterable[str]) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True, sort=False)
 
 
+def scan_chat_gold_manifest(client) -> tuple[tuple[str, str, int, int], ...]:
+    entries = []
+    for table_name, prefix in CHAT_GOLD_TABLE_PREFIXES.items():
+        for blob in client.list_blobs(BUCKET_NAME, prefix=prefix):
+            if not blob.name.lower().endswith(".parquet") or int(blob.size or 0) <= 0:
+                continue
+            entries.append(
+                (
+                    table_name,
+                    blob.name,
+                    int(blob.generation or 0),
+                    int(blob.size or 0),
+                )
+            )
+    return tuple(sorted(entries))
+
+
+def update_chat_gold_current_manifest() -> tuple[tuple[str, str, int, int], ...]:
+    client = create_storage_client()
+    manifest = scan_chat_gold_manifest(client)
+    if not manifest:
+        raise RuntimeError("No Chat Gold Parquet files were found.")
+    payload = {
+        "schema_version": "chat_gold_manifest_v1",
+        "generated_at": datetime.now(UTC).isoformat(),
+        "tables": {
+            table_name: [
+                {"name": name, "generation": generation, "size": size}
+                for table, name, generation, size in manifest
+                if table == table_name
+            ]
+            for table_name in CHAT_GOLD_TABLE_PREFIXES
+        },
+    }
+    client.bucket(BUCKET_NAME).blob(GOLD_CHAT_CURRENT_MANIFEST).upload_from_string(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True),
+        content_type="application/json",
+    )
+    return manifest
+
+
+def chat_gold_manifest() -> tuple[tuple[str, str, int, int], ...]:
+    client = create_storage_client()
+    try:
+        manifest_blob = client.bucket(BUCKET_NAME).blob(GOLD_CHAT_CURRENT_MANIFEST)
+        if manifest_blob.exists():
+            payload = json.loads(manifest_blob.download_as_text())
+            entries = [
+                (
+                    table_name,
+                    str(entry["name"]),
+                    int(entry.get("generation") or 0),
+                    int(entry.get("size") or 0),
+                )
+                for table_name, table_entries in payload.get("tables", {}).items()
+                for entry in table_entries
+            ]
+            if entries:
+                return tuple(sorted(entries))
+    except Exception:
+        pass
+    return scan_chat_gold_manifest(client)
+
+
+def chat_gold_cache_path(manifest: tuple[tuple[str, str, int, int], ...]) -> Path:
+    signature = json.dumps(manifest, ensure_ascii=True, sort_keys=True)
+    token = hashlib.sha256(f"{CACHE_SCHEMA_VERSION}::{signature}".encode("utf-8")).hexdigest()[:24]
+    return dashboard_cache_dir() / f"gold_chat_{token}.pkl"
+
+
 def load_gold_table(prefix: str) -> pd.DataFrame:
     blob_names = list_parquet_blobs(prefix)
     if not blob_names:
@@ -75,21 +155,73 @@ def load_gold_table(prefix: str) -> pd.DataFrame:
 
 
 def load_chat_gold_tables() -> Dict[str, pd.DataFrame]:
+    manifest = chat_gold_manifest()
+    cache_path = chat_gold_cache_path(manifest)
+    if cache_path.exists():
+        try:
+            payload = pd.read_pickle(cache_path)
+            if (
+                payload.get("schema_version") == CACHE_SCHEMA_VERSION
+                and payload.get("manifest") == manifest
+            ):
+                return payload["tables"]
+        except (OSError, ValueError, EOFError, KeyError, AttributeError):
+            pass
+
+    names_by_table: Dict[str, List[str]] = {name: [] for name in CHAT_GOLD_TABLE_PREFIXES}
+    for table_name, blob_name, _generation, _size in manifest:
+        names_by_table[table_name].append(blob_name)
+
     tables: Dict[str, pd.DataFrame] = {}
     for table_name, prefix in CHAT_GOLD_TABLE_PREFIXES.items():
+        gold_path = f"gs://{BUCKET_NAME}/{prefix}"
         try:
-            tables[table_name] = load_gold_table(prefix)
-        except FileNotFoundError:
-            if table_name not in OPTIONAL_CHAT_GOLD_TABLES:
-                raise
-            tables[table_name] = pd.DataFrame()
-    return normalize_chat_gold_tables(tables)
+            blob_names = names_by_table[table_name]
+            if not blob_names:
+                raise FileNotFoundError(f"Missing Gold Parquet files under {gold_path}")
+            frame = read_parquet_blobs(blob_names)
+            frame.attrs.update(
+                {
+                    "gold_path": gold_path,
+                    "gold_prefix": prefix,
+                    "load_status": "loaded",
+                    "warning": "",
+                    "part_count": len(blob_names),
+                    "row_count": int(len(frame)),
+                }
+            )
+            tables[table_name] = frame
+        except Exception as exc:
+            frame = pd.DataFrame()
+            frame.attrs.update(
+                {
+                    "gold_path": gold_path,
+                    "gold_prefix": prefix,
+                    "load_status": "missing",
+                    "warning": f"Bảng Gold {table_name} chưa tồn tại hoặc chưa đọc được: {exc}",
+                    "part_count": 0,
+                    "row_count": 0,
+                }
+            )
+            tables[table_name] = frame
+    normalized = normalize_chat_gold_tables(tables)
+    atomic_pickle_dump(
+        {
+            "schema_version": CACHE_SCHEMA_VERSION,
+            "manifest": manifest,
+            "tables": normalized,
+        },
+        cache_path,
+        keep_glob="gold_chat_*.pkl",
+    )
+    return normalized
 
 
 def normalize_chat_gold_tables(tables: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
     normalized = {name: frame.copy() for name, frame in tables.items()}
     hourly = normalized.get("chat_hourly_metrics", pd.DataFrame())
     if not hourly.empty:
+        attrs = dict(hourly.attrs)
         numeric_columns = [
             "hour",
             "total_messages",
@@ -115,19 +247,26 @@ def normalize_chat_gold_tables(tables: Dict[str, pd.DataFrame]) -> Dict[str, pd.
             if column not in hourly.columns:
                 hourly[column] = 0
             hourly[column] = pd.to_numeric(hourly[column], errors="coerce").fillna(0)
-        if "date" in hourly.columns:
-            hourly["date"] = pd.to_datetime(hourly["date"], errors="coerce").dt.date.astype(str)
-        normalized["chat_hourly_metrics"] = hourly.sort_values(["date", "hour"]).reset_index(drop=True)
+        if "date" not in hourly.columns:
+            hourly["date"] = ""
+        hourly["date"] = pd.to_datetime(hourly["date"], errors="coerce").dt.date.astype(str)
+        hourly, audience_available = normalize_chat_audience_group(hourly)
+        hourly = hourly.sort_values(["date", "hour"]).reset_index(drop=True)
+        attrs["audience_group_available"] = audience_available
+        hourly.attrs.update(attrs)
+        normalized["chat_hourly_metrics"] = hourly
 
     for table_name, value_column in {
         "chat_risk_summary": "risk_level",
         "chat_topic_summary": "topic",
         "chat_construct_summary": "chat_construct",
         "chat_sentiment_summary": "sentiment",
+        "chat_model_usage": "model",
     }.items():
         frame = normalized.get(table_name, pd.DataFrame())
         if frame.empty:
             continue
+        attrs = dict(frame.attrs)
         if "count" in frame.columns:
             frame["count"] = pd.to_numeric(frame["count"], errors="coerce").fillna(0)
         if "percentage" in frame.columns:
@@ -146,8 +285,53 @@ def normalize_chat_gold_tables(tables: Dict[str, pd.DataFrame]) -> Dict[str, pd.
                 frame[numeric_column] = pd.to_numeric(frame[numeric_column], errors="coerce").fillna(0)
         if value_column in frame.columns:
             frame[value_column] = frame[value_column].fillna("unknown").astype(str)
-        normalized[table_name] = frame.reset_index(drop=True)
+        frame, audience_available = normalize_chat_audience_group(frame)
+        frame = frame.reset_index(drop=True)
+        attrs["audience_group_available"] = audience_available
+        frame.attrs.update(attrs)
+        normalized[table_name] = frame
     return normalized
+
+
+def normalize_chat_audience_group(frame: pd.DataFrame) -> tuple[pd.DataFrame, bool]:
+    result = frame.copy()
+    if "audience_group" not in result.columns:
+        result["audience_group"] = "overall"
+        return result, False
+
+    raw = result["audience_group"].fillna("unknown").astype(str).str.strip().str.lower()
+    normalized = pd.Series("unknown", index=result.index, dtype="object")
+    normalized[raw.isin(["school", "student_school", "high_school"])] = "school"
+    normalized[raw.isin(["university", "college", "student_university"])] = "university"
+    normalized[raw.str.contains("school|hoc sinh|hocsinh", regex=True, na=False)] = "school"
+    normalized[raw.str.contains("university|college|sinh vien|sinhvien", regex=True, na=False)] = "university"
+    normalized[raw.isin(["overall", "all", "total"])] = "overall"
+    result["audience_group"] = normalized
+    return result, bool(set(normalized.dropna()) & REAL_CHAT_AUDIENCE_GROUPS)
+
+
+def filter_chat_gold_tables_by_audience(
+    tables: Dict[str, pd.DataFrame],
+    audience_group: str | None,
+) -> Dict[str, pd.DataFrame]:
+    if audience_group is None:
+        return {name: frame.copy() for name, frame in tables.items()}
+
+    filtered: Dict[str, pd.DataFrame] = {}
+    for table_name, frame in tables.items():
+        if frame.empty:
+            filtered[table_name] = frame.copy()
+            continue
+        attrs = dict(frame.attrs)
+        if not attrs.get("audience_group_available", False) or "audience_group" not in frame.columns:
+            empty = frame.iloc[0:0].copy()
+            empty.attrs.update(attrs)
+            filtered[table_name] = empty
+            continue
+        subset = frame[frame["audience_group"] == audience_group].copy()
+        subset.attrs.update(attrs)
+        filtered[table_name] = subset
+    return filtered
 
 
 def load_hourly_chat_metrics() -> pd.DataFrame:

@@ -1,0 +1,30 @@
+{$APP_DOMAIN} {
+    encode zstd gzip
+
+    @api path /api/* /health /ready /docs* /openapi.json /redoc*
+    handle @api {
+        reverse_proxy backend:8000
+    }
+
+    handle /dashboard/* {
+        reverse_proxy dashboard:8501
+    }
+
+    handle {
+        reverse_proxy frontend:80
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    log {
+        output stdout
+        format json
+    }
+
+    tls {$ACME_EMAIL}
+}

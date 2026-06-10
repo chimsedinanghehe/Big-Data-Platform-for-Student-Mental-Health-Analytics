@@ -1,10 +1,13 @@
 """Chat Bronze -> Silver batch job for Dataproc Serverless Spark.
 
-Scope:
-- Read only raw chatbot JSONL events under bronze/chat_logs.
+Production path:
+- Read raw chatbot JSONL events from GCS Bronze.
 - Clean, validate, deduplicate, anonymize, and enrich record-level chat logs.
-- Write only cleaned/anonymized record-level Parquet to silver/anonymized_chat.
-- Do not read or write survey, knowledge base, vector, embeddings, or RAG chunks.
+- Preserve audience metadata for dashboard splits by school/university.
+- Write only Silver Parquet.
+
+Debug/verification work is gated by flags so production does not scan the same
+data repeatedly just for logs.
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ BRONZE_CHAT_PATH = "gs://student-mental-health-lake-nhom1-2026/bronze/chat_logs/
 SILVER_CHAT_PATH = "gs://student-mental-health-lake-nhom1-2026/silver/anonymized_chat/"
 INVALID_CHAT_PATH = "gs://student-mental-health-lake-nhom1-2026/silver/anonymized_chat_invalid/"
 WRITE_MODE = "overwrite"
+NOT_COUNTED = "not_counted_for_speed"
 
 CHAT_SCHEMA = T.StructType(
     [
@@ -34,6 +38,16 @@ CHAT_SCHEMA = T.StructType(
         T.StructField("event_type", T.StringType(), True),
         T.StructField("timestamp", T.StringType(), True),
         T.StructField("anonymous_session_id", T.StringType(), True),
+        T.StructField("user_id_hash", T.StringType(), True),
+        T.StructField("user_age", T.IntegerType(), True),
+        T.StructField("user_gender", T.StringType(), True),
+        T.StructField("learner_type", T.StringType(), True),
+        T.StructField("grade", T.StringType(), True),
+        T.StructField("class_level", T.StringType(), True),
+        T.StructField("user_group", T.StringType(), True),
+        T.StructField("audience_group", T.StringType(), True),
+        T.StructField("survey_type", T.StringType(), True),
+        T.StructField("survey_completed", T.BooleanType(), True),
         T.StructField("question", T.StringType(), True),
         T.StructField("answer", T.StringType(), True),
         T.StructField("standalone_query", T.StringType(), True),
@@ -52,6 +66,16 @@ OUTPUT_COLUMNS = [
     "day",
     "hour",
     "anonymous_session_id",
+    "user_id_hash",
+    "user_age",
+    "user_gender",
+    "learner_type",
+    "grade",
+    "class_level",
+    "user_group",
+    "audience_group",
+    "survey_type",
+    "survey_completed",
     "question_clean",
     "answer_clean",
     "standalone_query_clean",
@@ -71,12 +95,12 @@ OUTPUT_COLUMNS = [
     "is_valid",
 ]
 
-HIGH_RISK_PATTERN = r"(?i)(\bkill\b|\bmurder\b|\bsuicide\b|hurt\s+someone|harm\s+someone|self\s*harm)"
-MEDIUM_RISK_PATTERN = r"(?i)(\bsad\b|\bstress\b|\bstressed\b|\bdepress\w*\b|\banxiety\b|\bpanic\b|\bhopeless\b)"
-NEGATIVE_PATTERN = r"(?i)(\bsad\b|\bstress\b|\bstressed\b|\bdepress\w*\b|\banxiety\b|\bpanic\b|\bkill\b|\bsuicide\b|\bhurt\b|\bharm\b|\bhopeless\b)"
-POSITIVE_PATTERN = r"(?i)(\bhappy\b|\bgood\b|\bgreat\b|\bthanks\b|thank\s+you|\bbetter\b)"
-HARM_INTENT_PATTERN = r"(?i)(\bkill\b|\bmurder\b|hurt\s+someone|harm\s+someone)"
-SELF_HARM_PATTERN = r"(?i)(\bsuicide\b|self\s*harm)"
+HIGH_RISK_PATTERN = r"(?i)(\bkill\b|\bmurder\b|\bsuicide\b|hurt\s+someone|harm\s+someone|self\s*harm|kill\s+myself|hurt\s+myself|tự\s*tử|tự\s*hại|giết\s+mình|làm\s+hại\s+bản\s+thân|giết\s+người|làm\s+hại\s+người)"
+MEDIUM_RISK_PATTERN = r"(?i)(\bsad\b|\bstress\b|\bstressed\b|\bdepress\w*\b|\banxiety\b|\bpanic\b|\bhopeless\b|lonely|burnout|buồn|căng\s*thẳng|trầm\s*cảm|lo\s*âu|hoảng\s*loạn|tuyệt\s*vọng|cô\s*đơn|kiệt\s*sức)"
+NEGATIVE_PATTERN = r"(?i)(\bsad\b|\bstress\b|\bstressed\b|\bdepress\w*\b|\banxiety\b|\bpanic\b|\bkill\b|\bsuicide\b|\bhurt\b|\bharm\b|\bhopeless\b|lonely|burnout|buồn|căng\s*thẳng|trầm\s*cảm|lo\s*âu|hoảng\s*loạn|tự\s*tử|tự\s*hại|đau\s*khổ|tuyệt\s*vọng|cô\s*đơn|kiệt\s*sức)"
+POSITIVE_PATTERN = r"(?i)(\bhappy\b|\bgood\b|\bgreat\b|\bthanks\b|thank\s+you|\bbetter\b|vui|ổn|tốt|cảm\s*ơn|đỡ\s*hơn|khá\s*hơn)"
+HARM_INTENT_PATTERN = r"(?i)(\bkill\b|\bmurder\b|hurt\s+someone|harm\s+someone|giết\s+người|làm\s+hại\s+người|đánh\s+người)"
+SELF_HARM_PATTERN = r"(?i)(\bsuicide\b|self\s*harm|kill\s+myself|hurt\s+myself|tự\s*tử|tự\s*hại|giết\s+mình|làm\s+hại\s+bản\s+thân)"
 
 
 def parse_args() -> argparse.Namespace:
@@ -84,11 +108,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input-path", default=BRONZE_CHAT_PATH)
     parser.add_argument("--output-path", default=SILVER_CHAT_PATH)
     parser.add_argument("--invalid-output-path", default=INVALID_CHAT_PATH)
-    parser.add_argument("--process-date", help="Read only bronze/chat_logs/date=YYYY-MM-DD/ for backfill or rerun.")
+    parser.add_argument("--process-date", help="Read only bronze/chat_logs/date=YYYY-MM-DD/.")
     parser.add_argument("--start-date", help="Read only date partitions from this YYYY-MM-DD date, inclusive.")
     parser.add_argument("--end-date", help="Read only date partitions through this YYYY-MM-DD date, inclusive.")
-    parser.add_argument("--output-partitions", type=int, default=16)
+    parser.add_argument("--output-partitions", type=int, default=4)
+    parser.add_argument("--spark-parallelism", type=int, default=8)
+    parser.add_argument("--shuffle-partitions", type=int, default=8)
     parser.add_argument("--write-mode", default=WRITE_MODE, choices=["overwrite", "append", "errorifexists", "ignore"])
+    parser.add_argument("--enable-quality-report", action="store_true")
+    parser.add_argument("--enable-output-verify", action="store_true")
+    parser.add_argument("--write-invalid-records", action="store_true")
+    parser.add_argument("--fast-mode", action="store_true", help="Kept for orchestration clarity; production defaults are already fast.")
+    parser.add_argument("--run-id")
+    parser.add_argument("--versioned-output", action="store_true")
     args = parser.parse_args()
     if args.process_date and (args.start_date or args.end_date):
         parser.error("--process-date cannot be combined with --start-date/--end-date")
@@ -122,6 +154,14 @@ def resolve_input_paths(input_path: str, process_date: Optional[str], start_date
     return input_path
 
 
+def resolve_output_path(output_path: str, run_id: Optional[str], versioned_output: bool) -> str:
+    if versioned_output:
+        if not run_id:
+            raise ValueError("--run-id is required when --versioned-output is enabled")
+        return f"{output_path.rstrip('/')}/run_id={run_id}/"
+    return output_path
+
+
 def print_json_log(payload: dict) -> None:
     print("JOB_JSON_LOG " + json.dumps(payload, default=str, sort_keys=True))
 
@@ -142,6 +182,29 @@ def clean_text(column_name: str):
     return F.trim(value)
 
 
+def audience_group_expression():
+    raw_group = F.lower(
+        F.trim(
+            F.coalesce(
+                F.col("audience_group").cast("string"),
+                F.col("user_group").cast("string"),
+                F.col("survey_type").cast("string"),
+                F.lit(""),
+            )
+        )
+    )
+    age = F.col("user_age").cast("int")
+    return (
+        F.when(raw_group.isin("school", "student_school", "high_school"), F.lit("school"))
+        .when(raw_group.isin("university", "college", "student_university"), F.lit("university"))
+        .when(raw_group.rlike("school|hoc sinh|hocsinh"), F.lit("school"))
+        .when(raw_group.rlike("university|college|sinh vien|sinhvien"), F.lit("university"))
+        .when(age.isNotNull() & (age <= 18), F.lit("school"))
+        .when(age.isNotNull() & (age >= 19), F.lit("university"))
+        .otherwise(F.lit("unknown"))
+    )
+
+
 def count_by(df: DataFrame, column_name: str, limit: int = 100) -> None:
     if column_name not in df.columns:
         print(f"WARNING: Cannot count by missing column {column_name}")
@@ -156,11 +219,10 @@ def parse_raw_events(raw: DataFrame) -> DataFrame:
         F.col("value").alias("_raw_json"),
         F.input_file_name().alias("_source_file"),
     )
+    expanded = parsed.select("event.*", "_raw_json", "_source_file", F.col("event").isNull().alias("_json_parse_failed"))
     schema_fields_missing = reduce_boolean_and([F.col(name).isNull() for name in CHAT_SCHEMA.fieldNames()])
     return (
-        parsed.withColumn("_json_parse_failed", F.col("event").isNull())
-        .select("event.*", "_raw_json", "_source_file", "_json_parse_failed")
-        .withColumn("_timestamp_parsed", F.to_timestamp("timestamp"))
+        expanded.withColumn("_timestamp_parsed", F.to_timestamp("timestamp"))
         .withColumn(
             "error_reason",
             F.when(F.col("_json_parse_failed"), F.lit("invalid_json"))
@@ -185,9 +247,7 @@ def invalid_records(parsed: DataFrame) -> DataFrame:
 
 
 def build_silver(valid: DataFrame) -> DataFrame:
-
     deduped = valid.dropDuplicates(["event_id"])
-
     with_text = (
         deduped.withColumn("question_clean", clean_text("question"))
         .withColumn("answer_clean", clean_text("answer"))
@@ -210,6 +270,16 @@ def build_silver(valid: DataFrame) -> DataFrame:
         .withColumn("hour", F.hour("timestamp"))
         .withColumn("event_type", F.coalesce(F.col("event_type"), F.lit("unknown")))
         .withColumn("anonymous_session_id", F.coalesce(F.col("anonymous_session_id"), F.lit("unknown")))
+        .withColumn("user_id_hash", F.col("user_id_hash").cast("string"))
+        .withColumn("user_age", F.col("user_age").cast("int"))
+        .withColumn("user_gender", F.col("user_gender").cast("string"))
+        .withColumn("learner_type", F.col("learner_type").cast("string"))
+        .withColumn("grade", F.col("grade").cast("string"))
+        .withColumn("class_level", F.coalesce(F.col("class_level").cast("string"), F.col("grade").cast("string"), F.col("learner_type").cast("string")))
+        .withColumn("audience_group", audience_group_expression())
+        .withColumn("user_group", F.coalesce(F.col("user_group").cast("string"), F.col("audience_group")))
+        .withColumn("survey_type", F.coalesce(F.col("survey_type").cast("string"), F.col("audience_group")))
+        .withColumn("survey_completed", F.coalesce(F.col("survey_completed").cast("boolean"), F.lit(False)))
         .withColumn("model", F.coalesce(F.col("model"), F.lit("unknown")))
         .withColumn("is_document_rag", F.coalesce(F.col("is_document_rag"), F.lit(False)))
         .withColumn("question_length", F.length("question_clean"))
@@ -246,7 +316,11 @@ def build_silver(valid: DataFrame) -> DataFrame:
     return result.select(*OUTPUT_COLUMNS)
 
 
-def print_quality_log(silver: DataFrame, raw_count: int, valid_count: int, invalid_count: int, silver_count: int) -> None:
+def print_quality_log(raw: DataFrame, parsed: DataFrame, valid_input: DataFrame, invalid: DataFrame, silver: DataFrame) -> dict:
+    raw_count = raw.count()
+    valid_count = valid_input.count()
+    invalid_count = invalid.count()
+    silver_count = silver.count()
     print("\nDATA QUALITY LOG: CHAT BRONZE -> SILVER")
     print(f"total raw rows: {raw_count}")
     print(f"valid rows before dedup: {valid_count}")
@@ -255,7 +329,7 @@ def print_quality_log(silver: DataFrame, raw_count: int, valid_count: int, inval
     print(f"duplicate rows removed: {valid_count - silver_count}")
     print("\nSilver schema:")
     silver.printSchema()
-    for column_name in ["date", "risk_level", "sentiment", "topic", "model"]:
+    for column_name in ["date", "audience_group", "risk_level", "sentiment", "topic", "model"]:
         count_by(silver, column_name)
     print("\nSAMPLE 20 SILVER ROWS")
     sample_columns = [
@@ -263,6 +337,11 @@ def print_quality_log(silver: DataFrame, raw_count: int, valid_count: int, inval
         "timestamp",
         "date",
         "hour",
+        "audience_group",
+        "user_age",
+        "user_gender",
+        "learner_type",
+        "class_level",
         "anonymous_session_id",
         "display_question",
         "model",
@@ -273,63 +352,103 @@ def print_quality_log(silver: DataFrame, raw_count: int, valid_count: int, inval
         "sensitive_flag",
     ]
     silver.select(*sample_columns).show(20, truncate=80)
+    return {
+        "input_rows": raw_count,
+        "valid_rows": valid_count,
+        "invalid_rows": invalid_count,
+        "duplicate_removed": valid_count - silver_count,
+        "output_rows": silver_count,
+    }
 
 
 def main() -> None:
     args = parse_args()
     start_time = time.time()
     input_paths = resolve_input_paths(args.input_path, args.process_date, args.start_date, args.end_date)
+    effective_output_path = resolve_output_path(args.output_path, args.run_id, args.versioned_output)
     spark = (
         SparkSession.builder.appName("chat-bronze-to-silver-anonymized")
-        .config("spark.sql.shuffle.partitions", "24")
-        .config("spark.default.parallelism", "24")
+        .config("spark.sql.shuffle.partitions", str(max(1, args.shuffle_partitions)))
+        .config("spark.default.parallelism", str(max(1, args.spark_parallelism)))
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
+        .config("spark.sql.sources.partitionOverwriteMode", "dynamic")
         .getOrCreate()
     )
     spark.sparkContext.setLogLevel("WARN")
 
+    quality_metrics = {
+        "input_rows": NOT_COUNTED,
+        "valid_rows": NOT_COUNTED,
+        "invalid_rows": NOT_COUNTED,
+        "duplicate_removed": NOT_COUNTED,
+        "output_rows": NOT_COUNTED,
+    }
+    status = "success"
+
     try:
-        print(f"Reading Bronze chat JSONL only from: {input_paths}")
+        print(f"Reading Bronze chat JSONL from: {input_paths}")
         raw = spark.read.option("recursiveFileLookup", "true").text(input_paths)
-        raw_count = raw.count()
         parsed = parse_raw_events(raw)
         invalid = invalid_records(parsed)
-        invalid_count = invalid.count()
         valid_input = parsed.where(F.col("error_reason").isNull())
-        valid_count = valid_input.count()
 
-        if invalid_count > 0:
+        if args.write_invalid_records:
             print(f"Writing invalid chat records to {args.invalid_output_path} with mode={args.write_mode}")
             invalid.write.mode(args.write_mode).parquet(args.invalid_output_path)
-        else:
-            print(f"No invalid chat records detected; invalid path not written: {args.invalid_output_path}")
 
         silver = build_silver(valid_input)
-        silver_count = silver.count()
+        writer_df = silver.repartition(max(1, args.output_partitions), "date", "hour")
+        print(
+            "Writing Silver Parquet to "
+            f"{effective_output_path} with mode={args.write_mode}, partitions={max(1, args.output_partitions)}"
+        )
+        writer_df.write.mode(args.write_mode).partitionBy("date", "hour").parquet(effective_output_path)
 
-        output_partitions = max(1, min(args.output_partitions, silver.select("date", "hour").distinct().count()))
-        print(f"Writing Silver Parquet to {args.output_path} with mode={args.write_mode}, partitions={output_partitions}")
-        silver.repartition(output_partitions, "date", "hour").write.mode(args.write_mode).partitionBy("date", "hour").parquet(args.output_path)
-        print_quality_log(silver, raw_count, valid_count, invalid_count, silver_count)
+        if args.enable_quality_report:
+            quality_metrics = print_quality_log(raw, parsed, valid_input, invalid, silver)
+        elif args.enable_output_verify:
+            quality_metrics["output_rows"] = spark.read.parquet(effective_output_path).count()
+
         print_json_log(
             {
                 "job_name": "chat_bronze_to_silver",
                 "project_id": PROJECT_ID,
                 "input_path": input_paths,
-                "output_path": args.output_path,
-                "invalid_output_path": args.invalid_output_path,
+                "output_path": effective_output_path,
+                "base_output_path": args.output_path,
+                "invalid_output_path": args.invalid_output_path if args.write_invalid_records else None,
                 "write_mode": args.write_mode,
-                "input_rows": raw_count,
-                "valid_rows": valid_count,
-                "invalid_rows": invalid_count,
-                "duplicate_removed": valid_count - silver_count,
-                "output_rows": silver_count,
+                "run_id": args.run_id,
+                "versioned_output": args.versioned_output,
+                "quality_report_enabled": args.enable_quality_report,
+                "output_verify_enabled": args.enable_output_verify,
+                "write_invalid_records": args.write_invalid_records,
+                "partition_config": {
+                    "output_partitions": max(1, args.output_partitions),
+                    "spark_parallelism": max(1, args.spark_parallelism),
+                    "shuffle_partitions": max(1, args.shuffle_partitions),
+                },
+                **quality_metrics,
                 "output_success": True,
                 "duration_seconds": round(time.time() - start_time, 2),
-                "status": "success",
+                "status": status,
             }
         )
+    except Exception:
+        status = "failed"
+        print_json_log(
+            {
+                "job_name": "chat_bronze_to_silver",
+                "project_id": PROJECT_ID,
+                "input_path": input_paths,
+                "output_path": effective_output_path,
+                "output_success": False,
+                "duration_seconds": round(time.time() - start_time, 2),
+                "status": status,
+            }
+        )
+        raise
     finally:
         spark.stop()
 

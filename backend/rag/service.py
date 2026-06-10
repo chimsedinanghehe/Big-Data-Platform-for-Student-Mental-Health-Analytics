@@ -42,7 +42,11 @@ def answer_question(
     docs = retriever.invoke(standalone_query)
 
     if not docs:
-        answer = apply_safety_guardrails("No relevant documents found.", question)
+        answer = apply_safety_guardrails(
+            "Mình chưa tìm thấy thông tin phù hợp trong kho tri thức để trả lời trọn vẹn. "
+            "Bạn có thể mô tả cụ thể hơn điều đang xảy ra, hoặc cho mình biết bạn muốn hỗ trợ về cảm xúc, học tập, gia đình hay an toàn cá nhân?",
+            question,
+        )
         if return_metadata:
             return {
                 "answer": answer,
@@ -106,7 +110,7 @@ def add_source_attribution(answer: str, docs) -> str:
     if not sources:
         return answer
 
-    return f"{answer.strip()}\n\nSources:\n" + "\n".join(sources)
+    return f"{answer.strip()}\n\nNguồn tham khảo:\n" + "\n".join(sources)
 
 
 def _source_labels(docs) -> list[str]:
@@ -122,10 +126,10 @@ def _source_labels(docs) -> list[str]:
 
 
 def _source_label(metadata: dict, fallback_index: int) -> str:
-    source_file = metadata.get("source_file") or "unknown source"
+    source_file = metadata.get("source_file") or "nguồn chưa rõ"
     page = metadata.get("page")
     chunk_id = metadata.get("chunk_id") or f"chunk-{fallback_index}"
-    doc_type = metadata.get("doc_type") or "document"
+    doc_type = metadata.get("doc_type") or "tài liệu"
 
-    page_label = "unknown page" if page is None else f"page {int(page) + 1}"
+    page_label = "trang chưa rõ" if page is None else f"trang {int(page) + 1}"
     return f"{source_file}, {page_label}, {chunk_id}, {doc_type}"

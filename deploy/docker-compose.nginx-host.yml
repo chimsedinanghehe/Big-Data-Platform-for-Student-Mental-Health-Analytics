@@ -1,0 +1,129 @@
+name: student-mental-health-platform
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    stop_grace_period: 60s
+    logging: *default-logging
+    env_file: .env.production
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+
+  backend:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    stop_grace_period: 60s
+    logging: *default-logging
+    env_file: .env.production
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      CORS_ALLOWED_ORIGINS: https://${APP_DOMAIN},https://www.${APP_DOMAIN}
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/gcp_service_account
+    secrets:
+      - gcp_service_account
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:18000:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=8)",
+        ]
+      interval: 20s
+      timeout: 8s
+      retries: 5
+      start_period: 60s
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_BASE_URL: https://${APP_DOMAIN}
+        VITE_DASHBOARD_URL: https://${APP_DOMAIN}/dashboard/
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging: *default-logging
+    ports:
+      - "127.0.0.1:18080:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+
+  dashboard:
+    build:
+      context: ..
+      dockerfile: MentalSchool_Dashboard/Dockerfile
+    restart: unless-stopped
+    stop_grace_period: 60s
+    logging: *default-logging
+    env_file: .env.production
+    environment:
+      DASHBOARD_CACHE_DIR: /app/data/.dashboard_cache
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/gcp_service_account
+    volumes:
+      - dashboard_cache:/app/data/.dashboard_cache
+    secrets:
+      - gcp_service_account
+    ports:
+      - "127.0.0.1:18501:8501"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/dashboard/_stcore/health', timeout=5)",
+        ]
+      interval: 20s
+      timeout: 8s
+      retries: 5
+      start_period: 60s
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  postgres_data:
+  dashboard_cache:
+
+secrets:
+  gcp_service_account:
+    file: ./secrets/gcp-service-account.json

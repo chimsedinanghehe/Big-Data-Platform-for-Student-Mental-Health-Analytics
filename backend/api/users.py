@@ -22,7 +22,12 @@ users_router = APIRouter(prefix="/api/users", tags=["users"])
 
 
 class StudentProfilePayload(BaseModel):
+<<<<<<< HEAD
     birthday: date | None = None
+=======
+    age: int | None = Field(default=None, ge=5, le=100)
+    birth_date: date | None = None
+>>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
     gender: str | None = None
     learner_type: str | None = None
 

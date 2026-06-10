@@ -9,6 +9,7 @@ import subprocess
 from uuid import uuid4
 
 from backend.rag.config import RAGSettings, get_settings
+from backend.surveys.questions import audience_group_for_age
 
 
 EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
@@ -26,6 +27,15 @@ def write_chat_turn(
     standalone_query: str | None = None,
     emotion: dict | None = None,
     safety: dict | None = None,
+    user_id: str | None = None,
+    user_age: int | None = None,
+    user_gender: str | None = None,
+    learner_type: str | None = None,
+    grade: str | int | None = None,
+    class_level: str | int | None = None,
+    user_group: str | None = None,
+    survey_type: str | None = None,
+    survey_completed: bool | None = None,
     settings: RAGSettings | None = None,
 ) -> str:
     settings = settings or get_settings()
@@ -44,6 +54,16 @@ def write_chat_turn(
         "event_type": "rag_chat_turn",
         "timestamp": now.isoformat(),
         "anonymous_session_id": anonymous_session_id,
+        "user_id_hash": hash_user_id(user_id) if user_id else None,
+        "user_age": user_age,
+        "user_gender": user_gender,
+        "learner_type": learner_type,
+        "grade": grade,
+        "class_level": class_level if class_level is not None else grade or learner_type,
+        "user_group": user_group or audience_group_for_age(user_age),
+        "audience_group": user_group or audience_group_for_age(user_age),
+        "survey_type": survey_type,
+        "survey_completed": survey_completed,
         "question": mask_pii(question),
         "answer": mask_pii(answer),
         "standalone_query": mask_pii(standalone_query) if standalone_query else None,
@@ -67,6 +87,12 @@ def anonymize_session_id(session_id: str) -> str:
         normalized = str(uuid4())
     digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
     return f"session_{digest[:32]}"
+
+
+def hash_user_id(user_id: str) -> str:
+    normalized = (user_id or "").strip()
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    return f"user_{digest[:32]}"
 
 
 def mask_pii(text: str | None) -> str | None:

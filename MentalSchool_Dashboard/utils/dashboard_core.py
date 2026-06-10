@@ -1546,11 +1546,20 @@ def value_to_label(value: Any, qnum: Optional[int] = None) -> str:
     return str(normalized)
 
 
+def values_to_labels(series: pd.Series, qnum: Optional[int] = None) -> pd.Series:
+    """Label a survey series once per distinct response instead of once per row."""
+    labels = {
+        value: value_to_label(value, qnum)
+        for value in series.dropna().drop_duplicates().tolist()
+    }
+    return series.map(labels).fillna("Missing")
+
+
 def label_category(series: pd.Series, source_col: str) -> pd.Series:
     mapping = CATEGORY_LABELS.get(source_col, {})
     if not mapping:
         qnum = extract_qnum(source_col)
-        return series.apply(lambda value: value_to_label(value, qnum))
+        return values_to_labels(series, qnum)
     return series.map(mapping).fillna(series.astype(str))
 
 
@@ -1632,7 +1641,7 @@ def question_frequency_table(
     qnum: Optional[int] = None,
 ) -> pd.DataFrame:
     qnum = qnum if qnum is not None else extract_qnum(col)
-    labels = df[col].apply(lambda value: value_to_label(value, qnum))
+    labels = values_to_labels(df[col], qnum)
     labels = labels[labels != "Missing"]
     total = len(labels)
     counts = labels.value_counts(dropna=False)
@@ -1653,7 +1662,7 @@ def target_by_response_table(
     qnum = qnum if qnum is not None else extract_qnum(col)
     tmp = pd.DataFrame(
         {
-            "Response": df[col].apply(lambda value: value_to_label(value, qnum)),
+            "Response": values_to_labels(df[col], qnum),
             "Target": df["Target"],
         }
     )
@@ -1873,7 +1882,7 @@ def target_prevalence_by_group(
 
     group = pd.DataFrame(
         {
-            display_name: df[col].apply(lambda value: value_to_label(value, qnum)),
+            display_name: values_to_labels(df[col], qnum),
             "Target": df["Target"],
         }
     )
@@ -1939,7 +1948,7 @@ def get_demographic_frame(df: pd.DataFrame) -> pd.DataFrame:
     for qnum, name in [(1, "Age"), (2, "Gender"), (3, "Grade")]:
         col = find_q_col(df, qnum)
         if col:
-            result[name] = df[col].apply(lambda value: value_to_label(value, qnum))
+            result[name] = values_to_labels(df[col], qnum)
     if "Target" in df.columns:
         result["Target"] = df["Target"].map(CATEGORY_LABELS["Target"]).fillna(df["Target"].astype(str))
         result["TargetValue"] = df["Target"]
@@ -1965,11 +1974,11 @@ def apply_description_filters(
     if sources and DATA_SOURCE_COLUMN in filtered.columns:
         filtered = filtered[filtered[DATA_SOURCE_COLUMN].astype(str).isin(sources)]
     if ages and q1:
-        filtered = filtered[filtered[q1].apply(lambda value: value_to_label(value, 1)).isin(ages)]
+        filtered = filtered[values_to_labels(filtered[q1], 1).isin(ages)]
     if genders and q2:
-        filtered = filtered[filtered[q2].apply(lambda value: value_to_label(value, 2)).isin(genders)]
+        filtered = filtered[values_to_labels(filtered[q2], 2).isin(genders)]
     if grades and q3:
-        filtered = filtered[filtered[q3].apply(lambda value: value_to_label(value, 3)).isin(grades)]
+        filtered = filtered[values_to_labels(filtered[q3], 3).isin(grades)]
     if targets and "Target" in filtered.columns:
         target_labels = filtered["Target"].map(CATEGORY_LABELS["Target"]).fillna(filtered["Target"].astype(str))
         filtered = filtered[target_labels.isin(targets)]

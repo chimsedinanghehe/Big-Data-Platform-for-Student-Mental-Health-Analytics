@@ -1,0 +1,147 @@
+main:
+  params: [args]
+  steps:
+    - init:
+        assign:
+          - project_id: ${default(map.get(args, "project_id"), "student-mental-health-496205")}
+          - region: ${default(map.get(args, "region"), "asia-southeast1")}
+          - bucket: ${default(map.get(args, "bucket"), "student-mental-health-lake-nhom1-2026")}
+          - vietnam_now: ${time.format(sys.now(), "Asia/Ho_Chi_Minh")}
+          - process_date: ${default(map.get(args, "process_date"), text.substring(vietnam_now, 0, 10))}
+          - safe_date: ${text.replace_all(process_date, "-", "")}
+          - utc_stamp: ${time.format(sys.now())}
+          - safe_time: ${text.replace_all(text.substring(utc_stamp, 11, 19), ":", "")}
+          - batch_prefix: ${"nightly-" + safe_date + "-" + safe_time}
+          - spark_props:
+              spark.dynamicAllocation.enabled: "false"
+              spark.executor.instances: "2"
+              spark.executor.cores: "4"
+              spark.executor.memory: "8g"
+              spark.driver.cores: "4"
+              spark.driver.memory: "8g"
+              spark.default.parallelism: "8"
+              spark.sql.shuffle.partitions: "8"
+              spark.sql.adaptive.enabled: "true"
+              spark.sql.adaptive.coalescePartitions.enabled: "true"
+              spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version: "2"
+              spark.dataproc.driver.disk.size: "250g"
+              spark.dataproc.executor.disk.size: "250g"
+    - survey_bronze_to_silver:
+        call: submit_pyspark_batch
+        args:
+          project_id: ${project_id}
+          region: ${region}
+          batch_id: ${batch_prefix + "-survey-b2s"}
+          main_python_file_uri: ${"gs://" + bucket + "/scripts/survey_pipeline/survey_bronze_to_silver_spark.py"}
+          spark_props: ${spark_props}
+          job_args:
+            - "--fast-mode"
+            - "--output-partitions"
+            - "4"
+            - "--spark-parallelism"
+            - "8"
+            - "--shuffle-partitions"
+            - "8"
+    - survey_silver_to_gold_core:
+        call: submit_pyspark_batch
+        args:
+          project_id: ${project_id}
+          region: ${region}
+          batch_id: ${batch_prefix + "-survey-s2g"}
+          main_python_file_uri: ${"gs://" + bucket + "/scripts/survey_pipeline/survey_silver_to_gold_spark.py"}
+          spark_props: ${spark_props}
+          job_args:
+            - "--tables"
+            - "core"
+            - "--disable-temp-stage"
+            - "--analytic-construct-mode"
+            - "fast"
+            - "--gold-output-partitions"
+            - "4"
+            - "--analytic-compute-partitions"
+            - "0"
+            - "--temp-output-partitions"
+            - "4"
+            - "--spark-parallelism"
+            - "8"
+            - "--shuffle-partitions"
+            - "8"
+            - "--run-id"
+            - ${batch_prefix}
+    - submit_chat_b2s:
+        call: submit_pyspark_batch
+        args:
+          project_id: ${project_id}
+          region: ${region}
+          batch_id: ${batch_prefix + "-chat-b2s"}
+          main_python_file_uri: ${"gs://" + bucket + "/scripts/chat_pipeline/chat_bronze_to_silver_spark.py"}
+          spark_props: ${spark_props}
+          job_args:
+            - "--process-date"
+            - ${process_date}
+            - "--fast-mode"
+            - "--output-partitions"
+            - "4"
+            - "--spark-parallelism"
+            - "8"
+            - "--shuffle-partitions"
+            - "8"
+    - chat_silver_to_gold:
+        call: submit_pyspark_batch
+        args:
+          project_id: ${project_id}
+          region: ${region}
+          batch_id: ${batch_prefix + "-chat-s2g"}
+          main_python_file_uri: ${"gs://" + bucket + "/scripts/chat_pipeline/chat_silver_to_gold_spark.py"}
+          spark_props: ${spark_props}
+          job_args:
+            - "--tables"
+            - "all"
+            - "--fast-mode"
+            - "--gold-output-partitions"
+            - "4"
+            - "--spark-parallelism"
+            - "8"
+            - "--shuffle-partitions"
+            - "8"
+    - done:
+        return:
+          status: submitted
+          batch_prefix: ${batch_prefix}
+          process_date: ${process_date}
+
+submit_pyspark_batch:
+  params: [project_id, region, batch_id, main_python_file_uri, spark_props, job_args]
+  steps:
+    - create:
+        call: googleapis.dataproc.v1.projects.locations.batches.create
+        args:
+          parent: ${"projects/" + project_id + "/locations/" + region}
+          batchId: ${batch_id}
+          body:
+            pysparkBatch:
+              mainPythonFileUri: ${main_python_file_uri}
+              args: ${job_args}
+            runtimeConfig:
+              properties: ${spark_props}
+        result: operation
+    - wait:
+        call: googleapis.dataproc.v1.projects.locations.operations.get
+        args:
+          name: ${operation.name}
+        result: current_operation
+    - check:
+        switch:
+          - condition: ${default(map.get(current_operation, "done"), false)}
+            next: finish
+    - sleep:
+        call: sys.sleep
+        args:
+          seconds: 30
+        next: wait
+    - raise_on_error:
+        switch:
+          - condition: ${map.get(current_operation, "error") != null}
+            raise: ${current_operation.error}
+    - finish:
+        return: ${current_operation}

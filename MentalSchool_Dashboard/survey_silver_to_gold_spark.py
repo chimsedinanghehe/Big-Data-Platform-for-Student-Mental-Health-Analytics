@@ -79,6 +79,14 @@ HMS_NATIVE_FEATURES = [
     "College Substance Exposure",
     "College Recovery Deficit",
 ]
+DISCRIMINATION_COLUMNS = [
+    "discrim_race",
+    "discrim_culture",
+    "discrim_gender",
+    "discrim_sexual",
+    "discrim_other",
+    "discrim",
+]
 CONSTRUCT_KEYWORDS = {
     "Family Pressure Index": ("family", "parent", "home", "housing", "food", "financial", "q89", "q90", "q91", "q99", "q100", "q101", "q102", "q104"),
     "Academic Pressure Index": ("academic", "school", "grade", "study", "stress", "imposter", "q87", "q103", "q105", "q106"),
@@ -203,7 +211,7 @@ HMS_ANALYTIC_COLUMNS = [
     "pay_worry2",
     "pay_worry3",
     "belong",
-    "discrim",
+    *DISCRIMINATION_COLUMNS,
     "safe_on",
     "safe_off",
     "hostcli",
@@ -325,7 +333,7 @@ ANALYTIC_FAST_COLUMNS = [
     "food_worry",
     "aca_stress",
     "belong",
-    "discrim",
+    *DISCRIMINATION_COLUMNS,
     "safe_on",
     "abuse_life",
     "sub_any",
@@ -333,25 +341,62 @@ ANALYTIC_FAST_COLUMNS = [
     "exerc",
 ]
 FAST_CONSTRUCT_COLUMNS = {
-    "Family Pressure Index": ["q89", "food_worry"],
-    "Academic Pressure Index": ["q87", "aca_stress"],
-    "Peer & Safety Stress Index": ["q14", "belong", "safe_on"],
-    "Trauma Exposure Index": ["q19", "abuse_life"],
-    "Substance Coping Risk Index": ["q33", "sub_any"],
-    "Lifestyle Recovery Deficit": ["q75", "sleep_wknight", "exerc"],
-    "College Financial Strain": ["fincur", "food_worry"],
-    "College Academic Adjustment": ["aca_stress"],
-    "College Belonging Deficit": ["belong"],
-    "College Discrimination Exposure": ["discrim"],
-    "College Campus Safety Stress": ["safe_on"],
-    "College Relationship Harm": ["abuse_life"],
-    "College Substance Exposure": ["sub_any"],
-    "College Recovery Deficit": ["sleep_wknight", "exerc"],
+    "Family Pressure Index": ["q89", "food_worry", "housing_worry", "fincur", "pay_worry"],
+    "Academic Pressure Index": ["q87", "q103", "aca_impa", "stress1", "failed"],
+    "Peer & Safety Stress Index": ["q14", "belong1", "safe_on_day", *DISCRIMINATION_COLUMNS],
+    "Trauma Exposure Index": ["q19", "abuse_life", "stalk_exp", "assault_sex", "sa_exp", "partner_phys", "ipv_1"],
+    "Substance Coping Risk Index": ["q33", "sub_any", "binge_fr", "smok_vape", "smok_freq"],
+    "Lifestyle Recovery Deficit": ["q75", "sleep_wknight", "exerc", "exerc_range5"],
+    "College Financial Strain": ["fincur", "food_worry", "housing_worry", "pay_worry"],
+    "College Academic Adjustment": ["aca_impa", "stress1", "compet_sch", "failed", "time_manage"],
+    "College Belonging Deficit": ["belong1"],
+    "College Discrimination Exposure": DISCRIMINATION_COLUMNS,
+    "College Campus Safety Stress": ["safe_on_day", "hostcli_distress"],
+    "College Relationship Harm": ["abuse_life", "stalk_exp", "assault_sex", "sa_exp", "partner_phys", "ipv_1"],
+    "College Substance Exposure": ["sub_any", "binge_fr", "smok_vape", "smok_freq"],
+    "College Recovery Deficit": ["sleep_wknight", "exerc", "exerc_range5"],
+}
+FAST_VALUE_RANGES = {
+    "q14": (1.0, 5.0, False),
+    "q33": (1.0, 7.0, False),
+    "q75": (1.0, 8.0, True),
+    "q87": (1.0, 5.0, False),
+    "q89": (1.0, 5.0, False),
+    "fincur": (1.0, 5.0, True),
+    "food_worry": (1.0, 3.0, False),
+    "housing_worry": (1.0, 3.0, False),
+    "pay_worry": (1.0, 6.0, True),
+    "aca_impa": (1.0, 4.0, False),
+    "aca_stress": (1.0, 5.0, False),
+    "stress1": (1.0, 5.0, False),
+    "compet_sch": (1.0, 5.0, True),
+    "time_manage": (1.0, 6.0, False),
+    "belong": (1.0, 6.0, False),
+    "belong1": (1.0, 6.0, False),
+    "safe_on": (1.0, 6.0, False),
+    "safe_on_day": (1.0, 6.0, False),
+    "hostcli_distress": (1.0, 5.0, False),
+    "abuse_life": (1.0, 5.0, False),
+    "binge_fr": (1.0, 6.0, False),
+    "smok_vape": (1.0, 5.0, False),
+    "smok_freq": (1.0, 5.0, False),
+    "sleep_wknight": (4.0, 10.0, True),
+    "exerc": (1.0, 6.0, True),
+    "exerc_range5": (1.0, 6.0, True),
+}
+FAST_BINARY_RISK_COLUMNS = {
+    "q19",
+    "failed",
+    "sub_any",
+    "stalk_exp",
+    "partner_phys",
+    "ipv_1",
+    *DISCRIMINATION_COLUMNS,
 }
 FIXED_CONSTRUCT_COLUMNS = {
     "Family Pressure Index": ["q89", "q90", "q91", "q99", "q100", "q101", "q102", "q104"],
     "Academic Pressure Index": ["q87", "q103", "q105", "q106"],
-    "Peer & Safety Stress Index": ["q14", "q15", "q18", "q24", "q25"],
+    "Peer & Safety Stress Index": ["q14", "q15", "q18", "q24", "q25", *DISCRIMINATION_COLUMNS],
     "Trauma Exposure Index": ["q19", "q20", "q21", "q22", "q88"],
     "Substance Coping Risk Index": ["q33", "q36", "q42", "q43", "q48", "q92"],
     "Lifestyle Recovery Deficit": ["q75", "q76", "q80", "q85", "q96"],
@@ -389,7 +434,7 @@ FIXED_CONSTRUCT_COLUMNS = {
         "time_manage",
     ],
     "College Belonging Deficit": ["belong"],
-    "College Discrimination Exposure": ["discrim"],
+    "College Discrimination Exposure": DISCRIMINATION_COLUMNS,
     "College Campus Safety Stress": ["safe_on", "safe_off", "hostcli"],
     "College Relationship Harm": [
         "abuse_life",
@@ -427,7 +472,7 @@ DASHBOARD_QUESTION_DISTRIBUTION_COLUMNS = list(
             "aca_impa",
             "aca_stress",
             "belong",
-            "discrim",
+            *DISCRIMINATION_COLUMNS,
             "safe_on",
             "abuse_life",
             "sub_any",
@@ -456,6 +501,71 @@ DASHBOARD_NUMERIC_SUMMARY_COLUMNS = list(
         ]
     )
 )
+DEFAULT_QUESTION_DISTRIBUTION_COLUMNS = list(
+    dict.fromkeys(
+        [
+            "q1",
+            "q2",
+            "q3",
+            "q14",
+            "q19",
+            "q24",
+            "q25",
+            "q26",
+            "q27",
+            "q28",
+            "q29",
+            "q33",
+            "q42",
+            "q75",
+            "q76",
+            "q84",
+            "q87",
+            "q89",
+            "q103",
+            "fincur",
+            "food_worry",
+            "aca_impa",
+            "aca_stress",
+            "belong",
+            *DISCRIMINATION_COLUMNS,
+            "safe_on",
+            "abuse_life",
+            "sub_any",
+            "sleep_wknight",
+            "exerc",
+        ]
+    )
+)
+DEFAULT_NUMERIC_SUMMARY_COLUMNS = list(
+    dict.fromkeys(
+        [
+            "age",
+            "q1",
+            "q2",
+            "q3",
+            "q26",
+            "q27",
+            "q28",
+            "q29",
+            "q84",
+            *RESEARCH_FEATURES,
+            *HMS_NATIVE_FEATURES,
+            "answer_completeness_rate",
+        ]
+    )
+)
+TABLE_ALIASES = {
+    "analytic_features": "survey_analytic_features",
+    "overview": "survey_overview_summary",
+    "response_by_date": "survey_response_by_date",
+    "demographic": "survey_demographic_summary",
+    "question_distribution": "survey_question_distribution",
+    "numeric_summary": "survey_numeric_summary",
+}
+CORE_TABLES = ["analytic_features", "overview", "response_by_date", "demographic"]
+HEAVY_TABLES = ["question_distribution", "numeric_summary"]
+ALL_TABLES = [*CORE_TABLES, *HEAVY_TABLES]
 
 
 def parse_args() -> argparse.Namespace:
@@ -469,13 +579,50 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--numeric-summary-output-path", default=GOLD_SURVEY_NUMERIC_SUMMARY_PATH)
     parser.add_argument("--analytic-features-output-path", default=GOLD_SURVEY_ANALYTIC_FEATURES_PATH)
     parser.add_argument("--gold-max-small-table-rows", type=int, default=100000)
-    parser.add_argument("--gold-output-partitions", type=int, default=32)
+    parser.add_argument("--gold-output-partitions", type=int, default=4)
+    parser.add_argument(
+        "--analytic-compute-partitions",
+        type=int,
+        default=0,
+        help="Optional repartition count before computing survey_analytic_features. Use 0 to keep natural Silver file partitions.",
+    )
+    parser.add_argument("--spark-parallelism", type=int, default=8)
+    parser.add_argument("--shuffle-partitions", type=int, default=8)
     parser.add_argument("--temp-work-path", default=TEMP_SURVEY_GOLD_WORK_PATH)
-    parser.add_argument("--temp-output-partitions", type=int, default=32)
+    parser.add_argument("--temp-output-partitions", type=int, default=4)
+    parser.add_argument(
+        "--tables",
+        default="all",
+        help=(
+            "Comma-separated Gold tables to build. Use all, core, heavy, or names: "
+            "analytic_features,overview,response_by_date,demographic,question_distribution,numeric_summary."
+        ),
+    )
+    parser.add_argument("--enable-output-verify", action="store_true", help="Count rows before/after writes for audit logs.")
+    parser.add_argument("--enable-counts", action="store_true", help="Alias for --enable-output-verify.")
+    parser.add_argument("--enable-schema-report", action="store_true", help="Print schemas for debug only.")
+    parser.add_argument("--enable-temp-stage", action="store_true", help="Materialize compact Silver temp Parquet before Gold builders.")
+    parser.add_argument("--cache-silver", action="store_true", help="Persist compact Silver between table writes. Off by default for small compact inputs.")
     parser.add_argument(
         "--disable-temp-stage",
         action="store_true",
-        help="Skip Stage A compact temp Parquet. Use only for debugging; production path keeps temp stage enabled.",
+        help="Skip Stage A compact temp Parquet. This is the production default unless --enable-temp-stage is set.",
+    )
+    parser.add_argument("--question-distribution-columns", help="Comma-separated columns for survey_question_distribution.")
+    parser.add_argument("--full-question-distribution", action="store_true", help="Use all dashboard question distribution columns.")
+    parser.add_argument("--numeric-summary-columns", help="Comma-separated columns for survey_numeric_summary.")
+    parser.add_argument("--full-numeric-summary", action="store_true", help="Use all dashboard numeric summary columns.")
+    parser.add_argument(
+        "--analytic-construct-mode",
+        default="fast",
+        choices=["compact", "fast", "semantic"],
+        help="Construct formula set for survey_analytic_features. fast is production refresh; compact/semantic are deeper audit modes.",
+    )
+    parser.add_argument("--enable-wholestage-codegen", action="store_true", help="Enable Spark whole-stage codegen for benchmark runs.")
+    parser.add_argument(
+        "--disable-wholestage-codegen",
+        action="store_true",
+        help="Keep Spark whole-stage codegen disabled. This is the production default for the wide construct expressions.",
     )
     parser.add_argument("--run-id", help="Versioned Gold run id. Default is UTC timestamp.")
     parser.add_argument(
@@ -510,6 +657,50 @@ def effective_write_mode(write_mode: str, versioned_output: bool) -> str:
     if versioned_output and write_mode == "overwrite":
         return "errorifexists"
     return write_mode
+
+
+def parse_csv_columns(value: Optional[str]) -> List[str]:
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def parse_requested_tables(value: str) -> List[str]:
+    requested: List[str] = []
+    tokens = parse_csv_columns(value or "all")
+    for token in tokens:
+        lowered = token.lower()
+        if lowered == "all":
+            requested.extend(ALL_TABLES)
+        elif lowered == "core":
+            requested.extend(CORE_TABLES)
+        elif lowered == "heavy":
+            requested.extend(HEAVY_TABLES)
+        elif lowered in TABLE_ALIASES:
+            requested.append(lowered)
+        elif lowered in TABLE_ALIASES.values():
+            requested.extend([name for name, table in TABLE_ALIASES.items() if table == lowered])
+        else:
+            raise ValueError(f"Unknown Gold table selector: {token}")
+    return [table for table in ALL_TABLES if table in set(requested)]
+
+
+def quote_identifier(name: str) -> str:
+    return "`" + name.replace("`", "``") + "`"
+
+
+def stack_unpivot(df: DataFrame, columns: Sequence[str], value_cast: str, name_col: str, value_col: str) -> Optional[DataFrame]:
+    existing = [column for column in dict.fromkeys(columns) if column in df.columns]
+    if not existing:
+        return None
+    stack_args = ", ".join(
+        f"'{column}', CAST({quote_identifier(column)} AS {value_cast})"
+        for column in existing
+    )
+    return df.selectExpr(
+        "source_group",
+        f"stack({len(existing)}, {stack_args}) as ({quote_identifier(name_col)}, {quote_identifier(value_col)})",
+    )
 
 
 def union_frames(frames: List[DataFrame]) -> Optional[DataFrame]:
@@ -566,52 +757,85 @@ def valid_condition(df: DataFrame):
     return F.col("is_valid") == F.lit(True) if "is_valid" in df.columns else F.lit(True)
 
 
-def build_overview(df: DataFrame) -> DataFrame:
-    payload = payload_columns(df)
-    total_cells = len(payload)
-    non_null_exprs = [F.count(F.col(column)).alias(f"__nn_{idx}") for idx, column in enumerate(payload)]
+def applicable_payload_columns(df: DataFrame, payload: List[str], source_group: str) -> List[str]:
+    payload_set = set(payload)
+    if source_group == "school":
+        candidates = [*SCHOOL_ANALYTIC_COLUMNS, "age", "gender", "grade"]
+    elif source_group == "university":
+        candidates = [*HMS_ANALYTIC_COLUMNS, "age", "gender", "sex", "yr_sch", "inst_hmsyear"]
+    else:
+        candidates = payload
+    return [column for column in dict.fromkeys(candidates) if column in df.columns and column in payload_set]
+
+
+def group_quality_counts(df: DataFrame, source_group: str, columns: List[str]) -> Dict[str, int]:
+    if source_group == "__other__":
+        filtered = df.where(~F.col("source_group").isin("school", "university"))
+    else:
+        filtered = df.where(F.col("source_group") == F.lit(source_group))
+    if not columns:
+        row = filtered.agg(F.count(F.lit(1)).alias("rows")).first().asDict()
+        return {"rows": int(row.get("rows") or 0), "columns": 0, "non_null_cells": 0}
+
     row = (
-        df.agg(
-            F.count(F.lit(1)).alias("total_responses"),
-            F.sum(F.when(valid_condition(df), 1).otherwise(0)).alias("valid_responses"),
-            F.sum(F.when(F.col("source_group") == "school", 1).otherwise(0)).alias("school_responses"),
-            F.sum(F.when(F.col("source_group") == "university", 1).otherwise(0)).alias("university_responses"),
-            *non_null_exprs,
+        filtered.agg(
+            F.count(F.lit(1)).alias("rows"),
+            *[F.count(F.col(column)).alias(f"__nn_{idx}") for idx, column in enumerate(columns)],
         )
         .first()
         .asDict()
     )
+    rows = int(row.get("rows") or 0)
+    non_null_cells = sum(int(row.get(f"__nn_{idx}") or 0) for idx, _ in enumerate(columns))
+    return {"rows": rows, "columns": len(columns), "non_null_cells": non_null_cells}
 
-    total_responses = int(row.get("total_responses") or 0)
-    valid_responses = int(row.get("valid_responses") or 0)
-    school_responses = int(row.get("school_responses") or 0)
-    university_responses = int(row.get("university_responses") or 0)
-    non_null_cells = sum(int(row.get(f"__nn_{idx}") or 0) for idx, _ in enumerate(payload))
-    denominator = total_responses * total_cells
-    missing_rate = round((denominator - non_null_cells) / denominator * 100, 2) if denominator else 0.0
 
-    return df.sparkSession.createDataFrame(
-        [
-            (
-                total_responses,
-                total_cells,
-                valid_responses,
-                total_responses - valid_responses,
-                missing_rate,
-                school_responses,
-                university_responses,
-            )
-        ],
-        [
-            "total_responses",
-            "total_columns",
-            "valid_responses",
-            "invalid_responses",
-            "missing_value_rate",
-            "school_responses",
-            "university_responses",
-        ],
-    ).withColumn("processed_at", F.current_timestamp())
+def build_overview(df: DataFrame) -> DataFrame:
+    payload = payload_columns(df)
+    total_cells = len(payload)
+
+    def non_null_count_expr(columns: List[str]):
+        if not columns:
+            return F.lit(0)
+        return reduce(lambda left, right: left + right, [F.col(column).isNotNull().cast("long") for column in columns])
+
+    school_columns = applicable_payload_columns(df, payload, "school")
+    university_columns = applicable_payload_columns(df, payload, "university")
+    other_columns = applicable_payload_columns(df, payload, "unknown")
+    source_group = F.col("source_group")
+    applicable_cells = (
+        F.when(source_group == "school", F.lit(len(school_columns)))
+        .when(source_group == "university", F.lit(len(university_columns)))
+        .otherwise(F.lit(len(other_columns)))
+    )
+    non_null_cells = (
+        F.when(source_group == "school", non_null_count_expr(school_columns))
+        .when(source_group == "university", non_null_count_expr(university_columns))
+        .otherwise(non_null_count_expr(other_columns))
+    )
+    aggregate = df.agg(
+        F.count(F.lit(1)).alias("total_responses"),
+        F.sum(F.when(valid_condition(df), 1).otherwise(0)).alias("valid_responses"),
+        F.sum(F.when(source_group == "school", 1).otherwise(0)).alias("school_responses"),
+        F.sum(F.when(source_group == "university", 1).otherwise(0)).alias("university_responses"),
+        F.sum(applicable_cells.cast("long")).alias("__applicable_cells"),
+        F.sum(non_null_cells.cast("long")).alias("__non_null_cells"),
+    )
+    return aggregate.select(
+        "total_responses",
+        F.lit(total_cells).alias("total_columns"),
+        "valid_responses",
+        (F.col("total_responses") - F.col("valid_responses")).alias("invalid_responses"),
+        F.when(
+            F.col("__applicable_cells") > 0,
+            F.round((F.col("__applicable_cells") - F.col("__non_null_cells")) / F.col("__applicable_cells") * 100, 2),
+        )
+        .otherwise(F.lit(0.0))
+        .alias("missing_value_rate"),
+        "school_responses",
+        "university_responses",
+        F.current_timestamp().alias("processed_at"),
+    )
 
 
 def build_response_by_date(df: DataFrame) -> Optional[DataFrame]:
@@ -655,20 +879,18 @@ def with_age_group(df: DataFrame) -> DataFrame:
 
 
 def value_distribution(df: DataFrame, columns: Iterable[str], name_col: str, value_col: str) -> Optional[DataFrame]:
-    frames: List[DataFrame] = []
-    total = max(df.count(), 1)
-    for column in columns:
-        if column not in df.columns:
-            continue
-        frames.append(
-            df.where(F.col(column).isNotNull())
-            .groupBy(F.col(column).cast("string").alias(value_col))
-            .agg(F.count(F.lit(1)).alias("count"))
-            .withColumn(name_col, F.lit(column))
-            .withColumn("percentage", F.round(F.col("count") / F.lit(total) * 100, 2))
-            .select(name_col, value_col, "count", "percentage")
-        )
-    return union_frames(frames)
+    unpivoted = stack_unpivot(df, list(columns), "string", name_col, value_col)
+    if unpivoted is None:
+        return None
+    dimension_window = Window.partitionBy(name_col)
+    return (
+        unpivoted.where(F.col(value_col).isNotNull())
+        .groupBy(name_col, value_col)
+        .agg(F.count(F.lit(1)).alias("count"))
+        .withColumn("__dimension_total", F.sum("count").over(dimension_window))
+        .withColumn("percentage", F.round(F.col("count") / F.col("__dimension_total") * 100, 2))
+        .select(name_col, value_col, "count", "percentage")
+    )
 
 
 def build_demographic_summary(df: DataFrame) -> Optional[DataFrame]:
@@ -720,28 +942,36 @@ def is_numeric_named_column(name: str) -> bool:
     )
 
 
-def build_question_distribution(df: DataFrame) -> Optional[DataFrame]:
-    columns = [column for column in DASHBOARD_QUESTION_DISTRIBUTION_COLUMNS if column in df.columns]
+def build_question_distribution(
+    df: DataFrame,
+    *,
+    selected_columns: Optional[Sequence[str]] = None,
+    full_distribution: bool = False,
+) -> Optional[DataFrame]:
+    base_columns = (
+        DASHBOARD_QUESTION_DISTRIBUTION_COLUMNS
+        if full_distribution
+        else (list(selected_columns or []) or DEFAULT_QUESTION_DISTRIBUTION_COLUMNS)
+    )
+    columns = [column for column in base_columns if column in df.columns]
     if not columns:
         columns = sorted(set(string_categorical_columns(df) + numeric_question_columns(df)))[:60]
     if not columns:
         print("WARNING: Skip survey_question_distribution because no categorical/question columns were found.")
         return None
 
-    frames: List[DataFrame] = []
-    source_window = Window.partitionBy("source_group")
-    for column in columns:
-        grouped = (
-            df.where(F.col(column).isNotNull())
-            .groupBy("source_group", F.col(column).cast("string").alias("answer_value"))
-            .agg(F.count(F.lit(1)).alias("count"))
-            .withColumn("column_name", F.lit(column))
-            .withColumn("__column_total", F.sum("count").over(source_window))
-            .withColumn("percentage", F.round(F.col("count") / F.col("__column_total") * 100, 2))
-            .select("column_name", "answer_value", "source_group", "count", "percentage")
-        )
-        frames.append(grouped)
-    return union_frames(frames)
+    unpivoted = stack_unpivot(df, columns, "string", "column_name", "answer_value")
+    if unpivoted is None:
+        return None
+    source_column_window = Window.partitionBy("source_group", "column_name")
+    return (
+        unpivoted.where(F.col("answer_value").isNotNull())
+        .groupBy("source_group", "column_name", "answer_value")
+        .agg(F.count(F.lit(1)).alias("count"))
+        .withColumn("__column_total", F.sum("count").over(source_column_window))
+        .withColumn("percentage", F.round(F.col("count") / F.col("__column_total") * 100, 2))
+        .select("column_name", "answer_value", "source_group", "count", "percentage")
+    )
 
 
 def numeric_columns(df: DataFrame) -> List[str]:
@@ -756,29 +986,38 @@ def numeric_columns(df: DataFrame) -> List[str]:
     ]
 
 
-def build_numeric_summary(df: DataFrame) -> Optional[DataFrame]:
-    columns = [column for column in DASHBOARD_NUMERIC_SUMMARY_COLUMNS if column in df.columns]
+def build_numeric_summary(
+    df: DataFrame,
+    *,
+    selected_columns: Optional[Sequence[str]] = None,
+    full_summary: bool = False,
+) -> Optional[DataFrame]:
+    base_columns = (
+        DASHBOARD_NUMERIC_SUMMARY_COLUMNS
+        if full_summary
+        else (list(selected_columns or []) or DEFAULT_NUMERIC_SUMMARY_COLUMNS)
+    )
+    columns = [column for column in base_columns if column in df.columns]
     if not columns:
         columns = numeric_columns(df)[:80]
     if not columns:
         print("WARNING: Skip survey_numeric_summary because no numeric columns were found.")
         return None
 
-    frames = []
-    for column in columns:
-        frames.append(
-            df.groupBy("source_group")
-            .agg(
-                F.count(F.col(column).cast("double")).alias("count"),
-                F.avg(F.col(column).cast("double")).alias("avg"),
-                F.min(F.col(column).cast("double")).alias("min"),
-                F.max(F.col(column).cast("double")).alias("max"),
-                F.stddev(F.col(column).cast("double")).alias("stddev"),
-            )
-            .withColumn("column_name", F.lit(column))
-            .select("column_name", "source_group", "count", "avg", "min", "max", "stddev")
+    unpivoted = stack_unpivot(df, columns, "double", "column_name", "numeric_value")
+    if unpivoted is None:
+        return None
+    return (
+        unpivoted.groupBy("source_group", "column_name")
+        .agg(
+            F.count("numeric_value").alias("count"),
+            F.avg("numeric_value").alias("avg"),
+            F.min("numeric_value").alias("min"),
+            F.max("numeric_value").alias("max"),
+            F.stddev("numeric_value").alias("stddev"),
         )
-    return union_frames(frames)
+        .select("column_name", "source_group", "count", "avg", "min", "max", "stddev")
+    )
 
 
 def find_columns(df: DataFrame, keywords: Iterable[str]) -> List[str]:
@@ -1002,12 +1241,22 @@ def numeric_max_values(df: DataFrame, columns: Sequence[str]) -> Dict[str, float
 
 def fast_value_score(column: str):
     value = F.col(column).cast("double")
-    return (
-        F.when(value.isNull(), F.lit(None).cast("double"))
-        .when(value.between(0, 1), value * F.lit(100.0))
-        .when(value.between(1, 5), (value - F.lit(1.0)) / F.lit(4.0) * F.lit(100.0))
-        .otherwise(value)
-    )
+    if column in FAST_BINARY_RISK_COLUMNS:
+        text = F.lower(F.trim(F.col(column).cast("string")))
+        return (
+            F.when(value == 1, F.lit(1.0))
+            .when(value.isin(0, 2), F.lit(0.0))
+            .when(text.isin("yes", "y", "true", "t"), F.lit(1.0))
+            .when(text.isin("no", "n", "false", "f"), F.lit(0.0))
+        )
+    min_value, max_value, reverse = FAST_VALUE_RANGES.get(column, (1.0, 5.0, False))
+    if column == "sleep_wknight":
+        unit = F.when(value.isNotNull(), F.abs(value - F.lit(8.0)) / F.lit(4.0))
+        return clamp_unit_interval(unit)
+    unit = F.when(value.between(min_value, max_value), (value - F.lit(min_value)) / F.lit(max_value - min_value))
+    if reverse:
+        unit = F.lit(1.0) - unit
+    return clamp_unit_interval(unit)
 
 
 def fast_construct_expression(df: DataFrame, columns: Sequence[str]):
@@ -1145,7 +1394,7 @@ def semantic_construct_expression(df: DataFrame, construct_name: str):
                 binary_risk_from_first(df, ["q24"]),
                 binary_risk_from_first(df, ["q25"]),
                 ordered_mean_risk(df, ["belong1", "belong2", "belong8", "belong9", "belong"], 1, 6),
-                binary_any_risk(df, ["discrim_race", "discrim_culture", "discrim_gender", "discrim_sexual", "discrim_other", "discrim"]),
+                binary_any_risk(df, DISCRIMINATION_COLUMNS),
                 ordered_mean_risk(df, ["safe_on_day", "safe_on_night", "safe_off_day", "safe_off_night", "safe_on", "safe_off"], 1, 6),
                 ordered_risk_from_first(df, ["hostcli_distress", "hostcli"], 1, 5),
             ]
@@ -1223,7 +1472,7 @@ def semantic_construct_expression(df: DataFrame, construct_name: str):
     if construct_name == "College Belonging Deficit":
         return mean_or_null([ordered_mean_risk(df, ["belong1", "belong2", "belong8", "belong9", "belong"], 1, 6)])
     if construct_name == "College Discrimination Exposure":
-        return mean_or_null([binary_any_risk(df, ["discrim_race", "discrim_culture", "discrim_gender", "discrim_sexual", "discrim_other", "discrim"])])
+        return mean_or_null([binary_any_risk(df, DISCRIMINATION_COLUMNS)])
     if construct_name == "College Campus Safety Stress":
         return mean_or_null(
             [
@@ -1301,7 +1550,7 @@ def dashboard_construct_expression(df: DataFrame, construct_name: str):
                 ordered_risk_from_first(df, ["q14"], 1, 5),
                 binary_any_risk(df, ["q18", "q24", "q25"]),
                 ordered_mean_risk(df, ["belong1", "belong2", "belong8", "belong9", "belong"], 1, 6),
-                binary_any_risk(df, ["discrim_race", "discrim_gender", "discrim_sexual", "discrim_other", "discrim"]),
+                binary_any_risk(df, DISCRIMINATION_COLUMNS),
                 ordered_mean_risk(df, ["safe_on_day", "safe_on_night", "safe_off_day", "safe_off_night", "safe_on", "safe_off"], 1, 6),
             ]
         )
@@ -1373,7 +1622,7 @@ def dashboard_construct_expression(df: DataFrame, construct_name: str):
     if construct_name == "College Belonging Deficit":
         return mean_or_null([ordered_mean_risk(df, ["belong1", "belong2", "belong8", "belong9", "belong"], 1, 6)])
     if construct_name == "College Discrimination Exposure":
-        return mean_or_null([binary_any_risk(df, ["discrim_race", "discrim_gender", "discrim_sexual", "discrim_other", "discrim"])])
+        return mean_or_null([binary_any_risk(df, DISCRIMINATION_COLUMNS)])
     if construct_name == "College Campus Safety Stress":
         return mean_or_null([ordered_mean_risk(df, ["safe_on_day", "safe_on_night", "safe_off_day", "safe_off_night", "safe_on", "safe_off"], 1, 6)])
     if construct_name == "College Relationship Harm":
@@ -1436,6 +1685,7 @@ def compact_dashboard_construct_expression(df: DataFrame, construct_name: str):
                 binary_any_risk(df, ["q24", "q25"]),
                 ordered_risk_from_first(df, ["safe_on_day", "safe_on"], 1, 6),
                 ordered_risk_from_first(df, ["belong1", "belong"], 1, 6),
+                binary_any_risk(df, DISCRIMINATION_COLUMNS),
             ]
         )
     if construct_name == "Trauma Exposure Index":
@@ -1484,7 +1734,7 @@ def compact_dashboard_construct_expression(df: DataFrame, construct_name: str):
     if construct_name == "College Belonging Deficit":
         return mean_or_null([ordered_risk_from_first(df, ["belong1", "belong"], 1, 6)])
     if construct_name == "College Discrimination Exposure":
-        return mean_or_null([binary_any_risk(df, ["discrim_race", "discrim_gender", "discrim_sexual", "discrim"])])
+        return mean_or_null([binary_any_risk(df, DISCRIMINATION_COLUMNS)])
     if construct_name == "College Campus Safety Stress":
         return mean_or_null([ordered_risk_from_first(df, ["safe_on_day", "safe_on"], 1, 6)])
     if construct_name == "College Relationship Harm":
@@ -1513,13 +1763,26 @@ def compact_dashboard_construct_expression(df: DataFrame, construct_name: str):
     return fast_construct_expression(df, FAST_CONSTRUCT_COLUMNS.get(construct_name, []))
 
 
-def build_analytic_features(df: DataFrame) -> DataFrame:
+def construct_expression_for_mode(df: DataFrame, construct_name: str, mode: str):
+    if mode == "fast":
+        return fast_construct_expression(df, FAST_CONSTRUCT_COLUMNS.get(construct_name, []))
+    if mode == "semantic":
+        return semantic_construct_expression(df, construct_name)
+    return compact_dashboard_construct_expression(df, construct_name)
+
+
+def build_analytic_features(df: DataFrame, analytic_partitions: int = 0, construct_mode: str = "compact") -> DataFrame:
     keep_columns = [
         column
         for column in dict.fromkeys(ANALYTIC_METADATA_COLUMNS + ANALYTIC_SOURCE_COLUMNS)
         if column in df.columns
     ]
     working = with_age_group(df.select(*keep_columns))
+    if analytic_partitions > 0:
+        # The construct projection is CPU-heavy. Repartition before building expressions so
+        # Spark can use the executor cores instead of evaluating the whole projection in a few
+        # combined file-scan tasks.
+        working = working.repartition(analytic_partitions)
     completeness_columns = [
         column
         for column in ["q1", "q2", "q3", "q26", "q27", "q28", "q29", "q84", "deprawsc", "anx_score", "dep_any", "sui_idea"]
@@ -1615,7 +1878,7 @@ def build_analytic_features(df: DataFrame) -> DataFrame:
         target.alias("Target"),
         *[F.col(column) for column in passthrough_columns],
         *[
-            compact_dashboard_construct_expression(working, construct_name).alias(construct_name)
+            construct_expression_for_mode(working, construct_name, construct_mode).alias(construct_name)
             for construct_name in RESEARCH_FEATURES + HMS_NATIVE_FEATURES
         ],
         F.col("age_group"),
@@ -1637,6 +1900,8 @@ def output_table(
     max_small_table_rows: int,
     output_partitions: int,
     known_rows: Optional[int] = None,
+    count_enabled: bool = False,
+    schema_report_enabled: bool = False,
 ) -> Dict[str, object]:
     if df is None:
         print(f"WARNING: Skip {table_name}; DataFrame was not created.")
@@ -1645,16 +1910,22 @@ def output_table(
         if isinstance(field.dataType, T.NullType):
             df = df.withColumn(field.name, F.lit(None).cast("string"))
     print(f"\nGOLD TABLE: {table_name}")
-    df.printSchema()
-    if table_name == "survey_analytic_features" and known_rows is not None:
+    if schema_report_enabled:
+        df.printSchema()
+    if known_rows is not None:
         rows = known_rows
-        print(f"{table_name} rows: {rows} (same as Silver input; skipped separate count action)")
+        print(f"{table_name} rows: {rows} (known from input count)")
         print(f"Writing Gold Parquet to {path} with mode={write_mode}")
-        # This is the heaviest record-level Gold table. Write it once, directly, to avoid a second
-        # full Spark action before the Parquet write. Do not repartition here: for the current
-        # dashboard-sized survey data, avoiding shuffle is faster than forcing a new file layout.
-        df.write.mode(write_mode).parquet(path)
+        writer_df = df.coalesce(max(1, output_partitions)) if table_name == "survey_analytic_features" else df.coalesce(1)
+        writer_df.write.mode(write_mode).parquet(path)
         return {"rows": rows, "path": path, "skipped": False}
+
+    if not count_enabled:
+        print(f"{table_name} rows: not_counted_for_speed")
+        print(f"Writing Gold Parquet to {path} with mode={write_mode}")
+        writer_df = df.coalesce(max(1, output_partitions)) if table_name == "survey_analytic_features" else df.coalesce(1)
+        writer_df.write.mode(write_mode).parquet(path)
+        return {"rows": "not_counted_for_speed", "path": path, "skipped": False}
 
     cached = df.persist(StorageLevel.MEMORY_AND_DISK)
     try:
@@ -1741,6 +2012,7 @@ def stage_compact_silver(
     temp_path: str,
     write_mode: str,
     output_partitions: int,
+    schema_report_enabled: bool = False,
 ) -> DataFrame:
     compact = cast_nulltype_columns(build_compact_silver_input(raw_silver, process_date))
     partitions = max(1, output_partitions)
@@ -1748,7 +2020,8 @@ def stage_compact_silver(
     print(f"Temp compact Silver path: {temp_path}")
     print(f"Temp write mode: {write_mode}")
     print(f"Temp output partitions: {partitions}")
-    compact.printSchema()
+    if schema_report_enabled:
+        compact.printSchema()
     # This materializes only the pruned dashboard columns. Stage B reads this compact Parquet,
     # so construct/index calculation no longer carries the original wide Silver read lineage.
     compact.repartition(partitions).write.mode(write_mode).parquet(temp_path)
@@ -1762,6 +2035,16 @@ def main() -> None:
     run_id = args.run_id or default_run_id()
     versioned_output = not args.disable_versioned_output
     write_mode = effective_write_mode(args.write_mode, versioned_output)
+    requested_tables = parse_requested_tables(args.tables)
+    count_enabled = bool(args.enable_output_verify or args.enable_counts)
+    temp_stage_requested = bool(args.enable_temp_stage and not args.disable_temp_stage)
+    whole_stage_codegen_enabled = bool(args.enable_wholestage_codegen and not args.disable_wholestage_codegen)
+    spark_parallelism = max(1, args.spark_parallelism)
+    shuffle_partitions = max(1, args.shuffle_partitions)
+    gold_output_partitions = max(1, args.gold_output_partitions)
+    analytic_compute_partitions = max(0, args.analytic_compute_partitions)
+    temp_output_partitions = max(1, args.temp_output_partitions)
+    stage_durations: Dict[str, float] = {}
     output_paths = {
         "survey_analytic_features": versioned_path(args.analytic_features_output_path, run_id, versioned_output),
         "survey_overview_summary": versioned_path(args.overview_output_path, run_id, versioned_output),
@@ -1773,11 +2056,11 @@ def main() -> None:
     temp_compact_path = compact_temp_path(args.temp_work_path, run_id)
     spark = (
         SparkSession.builder.appName("survey-silver-to-gold-dashboard-tables")
-        .config("spark.sql.shuffle.partitions", "48")
-        .config("spark.default.parallelism", "48")
+        .config("spark.sql.shuffle.partitions", str(shuffle_partitions))
+        .config("spark.default.parallelism", str(spark_parallelism))
         .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.adaptive.coalescePartitions.enabled", "false")
-        .config("spark.sql.codegen.wholeStage", "false")
+        .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
+        .config("spark.sql.codegen.wholeStage", "true" if whole_stage_codegen_enabled else "false")
         .config("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2")
         .getOrCreate()
     )
@@ -1785,6 +2068,7 @@ def main() -> None:
 
     try:
         print(f"Reading Silver input only: {args.input_path}")
+        read_start = time.time()
         try:
             silver = spark.read.parquet(args.input_path)
         except AnalysisException as exc:
@@ -1793,9 +2077,11 @@ def main() -> None:
                 "Run survey_bronze_to_silver_spark.py first, then run Silver -> Gold."
             )
             raise exc
+        stage_durations["read_silver_seconds"] = round(time.time() - read_start, 2)
 
-        if args.disable_temp_stage:
-            print("WARNING: --disable-temp-stage enabled; Stage A compact Parquet will be skipped.")
+        temp_start = time.time()
+        if not temp_stage_requested:
+            print("Skipping compact temp Parquet stage in production mode.")
             silver = build_compact_silver_input(silver, args.process_date)
             temp_stage_enabled = False
             temp_path_for_log = None
@@ -1806,69 +2092,78 @@ def main() -> None:
                 args.process_date,
                 temp_compact_path,
                 write_mode,
-                args.temp_output_partitions,
+                temp_output_partitions,
+                args.enable_schema_report,
             )
             temp_stage_enabled = True
             temp_path_for_log = temp_compact_path
+        stage_durations["temp_stage_seconds"] = round(time.time() - temp_start, 2)
 
-        # Reused by six Gold builders; MEMORY_AND_DISK avoids recomputing the compact dashboard input.
-        silver = silver.persist(StorageLevel.MEMORY_AND_DISK)
-        silver.printSchema()
-        input_rows = silver.count()
-        print(f"Silver rows available for Gold creation: {input_rows}")
+        if args.enable_schema_report:
+            silver.printSchema()
+        if args.cache_silver and len(requested_tables) > 1:
+            silver = silver.persist(StorageLevel.MEMORY_AND_DISK)
+            silver_cached = True
+        else:
+            silver_cached = False
 
-        output_rows = {
-            "survey_analytic_features": output_table(
-                build_analytic_features(silver),
-                output_paths["survey_analytic_features"],
-                "survey_analytic_features",
-                write_mode,
-                args.gold_max_small_table_rows,
-                args.gold_output_partitions,
-                known_rows=input_rows,
+        input_rows = None
+        if count_enabled:
+            count_start = time.time()
+            input_rows = silver.count()
+            stage_durations["input_count_seconds"] = round(time.time() - count_start, 2)
+            print(f"Silver rows available for Gold creation: {input_rows}")
+        else:
+            print("Silver rows available for Gold creation: not_counted_for_speed")
+
+        question_distribution_columns = parse_csv_columns(args.question_distribution_columns)
+        numeric_summary_columns = parse_csv_columns(args.numeric_summary_columns)
+        table_builders = {
+            "analytic_features": lambda: build_analytic_features(
+                silver,
+                analytic_partitions=analytic_compute_partitions,
+                construct_mode=args.analytic_construct_mode,
             ),
-            "survey_overview_summary": output_table(
-                build_overview(silver),
-                output_paths["survey_overview_summary"],
-                "survey_overview_summary",
-                write_mode,
-                args.gold_max_small_table_rows,
-                args.gold_output_partitions,
+            "overview": lambda: build_overview(silver),
+            "response_by_date": lambda: build_response_by_date(silver),
+            "demographic": lambda: build_demographic_summary(silver),
+            "question_distribution": lambda: build_question_distribution(
+                silver,
+                selected_columns=question_distribution_columns,
+                full_distribution=args.full_question_distribution,
             ),
-            "survey_response_by_date": output_table(
-                build_response_by_date(silver),
-                output_paths["survey_response_by_date"],
-                "survey_response_by_date",
-                write_mode,
-                args.gold_max_small_table_rows,
-                args.gold_output_partitions,
-            ),
-            "survey_demographic_summary": output_table(
-                build_demographic_summary(silver),
-                output_paths["survey_demographic_summary"],
-                "survey_demographic_summary",
-                write_mode,
-                args.gold_max_small_table_rows,
-                args.gold_output_partitions,
-            ),
-            "survey_question_distribution": output_table(
-                build_question_distribution(silver),
-                output_paths["survey_question_distribution"],
-                "survey_question_distribution",
-                write_mode,
-                args.gold_max_small_table_rows,
-                args.gold_output_partitions,
-            ),
-            "survey_numeric_summary": output_table(
-                build_numeric_summary(silver),
-                output_paths["survey_numeric_summary"],
-                "survey_numeric_summary",
-                write_mode,
-                args.gold_max_small_table_rows,
-                args.gold_output_partitions,
+            "numeric_summary": lambda: build_numeric_summary(
+                silver,
+                selected_columns=numeric_summary_columns,
+                full_summary=args.full_numeric_summary,
             ),
         }
-        print("Gold output completed. Every Gold table was created from Silver input only.")
+        output_rows: Dict[str, object] = {}
+        tables_written: List[str] = []
+        try:
+            for table_key in requested_tables:
+                internal_name = TABLE_ALIASES[table_key]
+                table_start = time.time()
+                output_rows[internal_name] = output_table(
+                    table_builders[table_key](),
+                    output_paths[internal_name],
+                    internal_name,
+                    write_mode,
+                    args.gold_max_small_table_rows,
+                    gold_output_partitions,
+                    known_rows=input_rows if table_key == "analytic_features" and input_rows is not None else None,
+                    count_enabled=count_enabled,
+                    schema_report_enabled=args.enable_schema_report,
+                )
+                stage_durations[f"{table_key}_seconds"] = round(time.time() - table_start, 2)
+                if not output_rows[internal_name].get("skipped"):
+                    tables_written.append(table_key)
+        finally:
+            if silver_cached:
+                silver.unpersist()
+
+        skipped_tables = [table for table in ALL_TABLES if table not in requested_tables]
+        print("Gold output completed. Requested Gold tables were created from Silver input only.")
         print_json_log(
             {
                 "job_name": "survey_silver_to_gold",
@@ -1879,12 +2174,30 @@ def main() -> None:
                 "effective_write_mode": write_mode,
                 "versioned_output": versioned_output,
                 "run_id": run_id,
+                "tables_requested": requested_tables,
+                "tables_written": tables_written,
+                "skipped_tables": skipped_tables,
+                "partition_config": {
+                    "spark_default_parallelism": spark_parallelism,
+                    "spark_shuffle_partitions": shuffle_partitions,
+                    "gold_output_partitions": gold_output_partitions,
+                    "analytic_compute_partitions": analytic_compute_partitions,
+                    "temp_output_partitions": temp_output_partitions,
+                    "adaptive_enabled": True,
+                    "adaptive_coalesce_partitions_enabled": True,
+                    "whole_stage_codegen_enabled": whole_stage_codegen_enabled,
+                },
                 "temp_stage_enabled": temp_stage_enabled,
                 "temp_compact_path": temp_path_for_log,
-                "input_rows": input_rows,
+                "cache_silver_enabled": silver_cached,
+                "analytic_construct_mode": args.analytic_construct_mode,
+                "count_enabled": count_enabled,
+                "schema_report_enabled": args.enable_schema_report,
+                "input_rows": input_rows if input_rows is not None else "not_counted_for_speed",
                 "output_rows": output_rows,
-                "output_paths": output_paths,
+                "output_paths": {TABLE_ALIASES[key]: output_paths[TABLE_ALIASES[key]] for key in requested_tables},
                 "output_success": True,
+                "stage_durations": stage_durations,
                 "duration_seconds": round(time.time() - start_time, 2),
                 "status": "success",
             }

@@ -14,19 +14,35 @@ venv/
 .venv/
 __pycache__/
 *.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
 
 models/
 
 # Node
 node_modules/
 frontend/dist/
+MentalSchool_Dashboard/data/.dashboard_cache/
 
 # Environment
 .env
+.env.*
+!.env.example
+!deploy/.env.production.example
+backend/.env
+
+**/school_survey_questions_answers.txt
+**/university_survey_questions_answers.txt
+school_survey_questions_answers.txt
+university_survey_questions_answers.txt
 
 # Logs
 logs/
 *.log
+*.out
+*.err
 
 # Big Data
 data/raw/
@@ -39,6 +55,8 @@ data/streaming/
 
 # Spark
 spark-warehouse/
+metastore_db/
+derby.log
 
 # Kafka
 /tmp/kafka-logs/
@@ -53,6 +71,45 @@ spark-warehouse/
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
+<<<<<<< HEAD
 frontend/.next/
 >>>>>>> chimse
+=======
+# IDE
+.vscode/
+.idea/
+
+# Generated artifacts and local reports
+build/
+*.docx
+~$*.docx
+*.pdf
+*.zip
+*.tar
+*.tar.gz
+*.md
+!deploy/BIGDATA_PRODUCTION.md
+*.txt
+!school_survey_questions_answers.txt
+!university_survey_questions_answers.txt
+*.docx
+
+# Deployment runtime state
+deploy/.env.production
+deploy/secrets/
+deploy/backups/
+deploy/runtime/
+
+frontend/.next/
+
+~/
+.codex/
+**/.codex/
+**/auth.json
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+>>>>>>> a737070ebdd229bed647412b6b52a70a9aba65ba
