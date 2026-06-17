@@ -146,239 +146,9 @@ survey-snapshot-worker
   Đọc survey từ PostgreSQL và ghi snapshot lên GCS Bronze.
 ```
 
-## 6. Kiến trúc Chatbot và RAG
+## 6. Cách chạy dự án
 
-Chatbot dùng RAG để trả lời dựa trên tài liệu đã được xử lý trước.
-
-Luồng chatbot:
-
-```text
-User nhập câu hỏi
-  -> Frontend gửi /api/rag/ask
-  -> Backend rewrite query
-  -> Truy xuất Qdrant bằng vector search
-  -> Lấy top-k chunk liên quan
-  -> Gọi LLM tạo câu trả lời
-  -> Trả kết quả về frontend
-  -> Ghi chatlog sang Kafka
-```
-
-Thành phần liên quan:
-
-```text
-OpenAI       sinh câu trả lời
-Qdrant       lưu vector embedding
-GCS          lưu tài liệu/chunk
-Backend RAG  điều phối truy xuất và trả lời
-Kafka        nhận chatlog để phân tích
-```
-
-## 7. Kiến trúc Streaming Chatlog
-
-Chatlog đi theo luồng streaming để dữ liệu chat được ghi nhanh xuống Data Lake.
-
-Luồng chatlog:
-
-```text
-Backend
-  -> Kafka topic student-chat-logs
-  -> Kafka consumer
-  -> GCS Silver
-  -> Spark batch
-  -> Gold tables
-  -> Dashboard
-```
-
-Thông tin chính:
-
-```text
-Kafka topic        student-chat-logs
-Output layer       GCS Silver
-Output path        silver/anonymized_chat/date=YYYY-MM-DD/hour=HH/
-Timezone           Asia/Ho_Chi_Minh
-Format             Parquet
-```
-
-Điểm quan trọng:
-
-- backend chỉ publish event, không xử lý batch nặng
-- Kafka consumer ghi Parquet xuống GCS
-- dữ liệu được partition theo ngày/giờ
-- message lỗi đi vào DLQ
-- offset chỉ commit sau khi upload GCS thành công
-  
-## 8. Kiến trúc Survey Pipeline
-
-Survey dùng mô hình snapshot + batch.
-
-Luồng survey:
-
-```text
-Frontend gửi survey
-  -> Backend lưu PostgreSQL
-  -> survey-snapshot-worker đọc PostgreSQL
-  -> Ghi GCS Bronze
-  -> Spark xử lý Bronze -> Silver
-  -> Spark xử lý Silver -> Gold
-  -> Dashboard đọc Gold
-```
-
-Đường dẫn dữ liệu:
-
-```text
-Bronze:
-gs://student-mental-health-lake-nhom1-2026/bronze/app_survey_snapshot/survey_all.parquet
-
-Silver:
-gs://student-mental-health-lake-nhom1-2026/silver/survey_cleaned/
-
-Gold:
-gs://student-mental-health-lake-nhom1-2026/gold/dashboard_tables/
-```
-
-Lý do dùng batch:
-
-- survey có nhiều câu hỏi và nhiều cột phân tích
-- cần chuẩn hóa schema
-- cần tổng hợp theo nhóm học sinh/sinh viên
-- Spark phù hợp cho dữ liệu lớn
-
-## 9. Batch Analytics trên Google Cloud
-
-Batch không chạy bằng cron local mà chạy trên Google Cloud.
-
-Luồng batch:
-
-```text
-Cloud Scheduler
-  -> Workflows
-  -> Dataproc Serverless Spark
-  -> GCS Silver/Gold
-```
-
-Thông tin lịch chạy:
-
-```text
-Scheduler name      nightly-dashboard-refresh-0000-vn
-Workflow name       nightly-dashboard-refresh
-Cron                0 0 * * *
-Timezone            Asia/Ho_Chi_Minh
-Process date        ngày hôm trước
-```
-
-Các batch chính:
-
-```text
-survey_bronze_to_silver
-survey_silver_to_gold
-chat_silver_to_gold
-```
-
-## 10. Dashboard và Cache
-
-Dashboard dùng Streamlit và đọc dữ liệu đã xử lý ở Gold.
-
-Dashboard không đọc raw data trực tiếp.
-
-Luồng dashboard:
-
-```text
-GCS Gold Tables
-  -> Dashboard cache
-  -> Streamlit UI
-  -> Researcher xem thống kê
-```
-
-Cache dashboard:
-
-```text
-cache_volume   dashboard_cache
-cache_path     /app/data/.dashboard_cache
-```
-
-Mục tiêu cache:
-
-- mở dashboard nhanh hơn
-- giảm số lần đọc GCS
-- tránh tính toán lại raw data
-- hiển thị dữ liệu Gold mới sau batch
-
-
-## 11. Luồng dữ liệu tổng quan
-
-### 11.1 Luồng Web
-
-```text
-Frontend
-  -> Backend API
-  -> PostgreSQL
-```
-
-Backend xử lý:
-
-- đăng ký
-- đăng nhập
-- phân quyền
-- survey
-- chatbot
-- ghi log chat
-
-### 11.2 Luồng Chat
-
-```text
-Backend
-  -> Kafka
-  -> GCS Silver
-  -> Spark
-  -> GCS Gold
-  -> Dashboard
-```
-
-Gold output của chat:
-
-```text
-chat_hourly_metrics
-chat_risk_summary
-chat_topic_summary
-chat_construct_summary
-chat_model_usage
-chat_sentiment_summary
-```
-
-### 11.3 Luồng Survey
-
-```text
-PostgreSQL
-  -> Survey Worker
-  -> GCS Bronze
-  -> Spark Silver
-  -> Spark Gold
-  -> Dashboard
-```
-
-Gold output của survey:
-
-```text
-survey_overview_summary
-survey_response_by_date
-survey_demographic_summary
-survey_analytic_features
-```
-
-### 11.4 Luồng RAG
-
-```text
-Tài liệu nguồn trên GCS
-  -> Làm sạch
-  -> Chia chunk
-  -> Tạo embedding
-  -> Lưu Qdrant
-  -> Backend truy xuất khi user hỏi
-```
-
-## 12. Cách chạy dự án
-
-### 12.1 Yêu cầu trước khi chạy
+### 6.1 Yêu cầu trước khi chạy
 
 Máy chủ cần có:
 
@@ -398,7 +168,7 @@ mindschool.site       -> SERVER_PUBLIC_IP
 www.mindschool.site   -> SERVER_PUBLIC_IP
 ```
 
-### 12.2 Clone source code
+### 6.2 Clone source code
 
 ```bash
 sudo mkdir -p /opt/mindschool
@@ -407,7 +177,7 @@ git clone <REPOSITORY_URL> /opt/mindschool/app
 cd /opt/mindschool/app
 ```
 
-### 12.3 Tạo file môi trường
+### 6.3 Tạo file .env
 
 ```bash
 cp deploy/.env.production.example deploy/.env.production
@@ -444,7 +214,7 @@ CHAT_KAFKA_TOPIC=student-chat-logs
 
 Không commit file `.env.production`.
 
-### 12.4 Chuẩn bị secret
+### 6.4 Chuẩn bị secret
 
 GCP credential:
 
@@ -465,7 +235,7 @@ chmod 600 deploy/secrets/gcp-service-account.json
 chmod 600 deploy/secrets/kafka-vm-ssh-key
 ```
 
-### 12.5 Cài Nginx, Docker, Certbot
+### 6.5 Cài Nginx, Docker, Certbot
 
 ```bash
 sudo APP_ROOT=/opt/mindschool/app \
@@ -481,7 +251,7 @@ sudo nginx -t
 sudo systemctl status nginx --no-pager
 ```
 
-### 12.6 Cài Kafka tunnel nếu bật Big Data
+### 6.6 Cài Kafka tunnel nếu bật Big Data
 
 ```bash
 sudo APP_ROOT=/opt/mindschool/app bash deploy/install-kafka-tunnel.sh
@@ -494,7 +264,7 @@ sudo systemctl status mindschool-kafka-tunnel.service --no-pager
 sudo systemctl is-active mindschool-kafka-tunnel.service
 ```
 
-### 12.7 Deploy Web production
+### 6.7 Deploy Web production
 
 ```bash
 cd /opt/mindschool/app
@@ -521,7 +291,7 @@ sudo docker compose \
   ps
 ```
 
-### 12.8 Kiểm tra sau deploy
+### 6.8 Kiểm tra sau deploy
 
 Kiểm tra public:
 
@@ -548,7 +318,7 @@ sudo docker compose \
   logs --tail=200 backend
 ```
 
-### 12.9 Deploy Big Data automation
+### 6.9 Deploy Big Data automation
 
 Dry-run:
 
@@ -585,15 +355,15 @@ gcloud dataproc batches list \
   --sort-by='~createTime'
 ```
 
-### 12.10 Warm cache dashboard
+### 6.10 Warm cache dashboard
 
 ```bash
 bash deploy/gcp/warm-dashboard-cache.sh
 ```
 
-## 13. Hướng dẫn sử dụng Web
+## 7. Hướng dẫn sử dụng Web
 
-### 13.1 Truy cập web
+### 7.1 Truy cập web
 
 Người dùng truy cập:
 
@@ -608,7 +378,7 @@ student      học sinh/sinh viên
 researcher   người nghiên cứu
 ```
 
-### 13.2 Đăng ký
+### 7.2 Đăng ký
 
 Người dùng thực hiện:
 
@@ -628,7 +398,7 @@ giới tính
 demographic
 ```
 
-### 13.3 Đăng nhập
+### 7.3 Đăng nhập
 
 Người dùng nhập email và mật khẩu.
 
@@ -639,7 +409,7 @@ student      vào trang khảo sát/chatbot
 researcher   vào dashboard phân tích
 ```
 
-### 13.4 Tài khoản học sinh/sinh viên
+### 7.4 Tài khoản học sinh/sinh viên
 
 Chức năng chính:
 
@@ -700,7 +470,7 @@ Thông tin hồ sơ phục vụ:
 - phân tích dashboard
 - gắn metadata cho survey/chatlog
 
-### 13.5 Tài khoản nghiên cứu
+### 7.5 Tài khoản nghiên cứu
 
 Tài khoản nghiên cứu dùng để xem dashboard.
 
@@ -781,7 +551,7 @@ Warm cache chạy chưa
 Dashboard đọc cache mới chưa
 ```
 
-## 14. Cách đọc Dashboard
+## 8. Cách đọc Dashboard
 
 Dashboard đọc dữ liệu tổng hợp, không đọc raw data.
 
