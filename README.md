@@ -1,7 +1,5 @@
 # MindSchool - Big Data Platform for Student Mental Health Analytics
 
-README này hướng dẫn triển khai đầy đủ hệ thống MindSchool gồm Web, Backend, PostgreSQL, Dashboard, Kafka/GCS integration và lịch xử lý Big Data bằng Google Cloud Scheduler + Workflows + Dataproc Serverless Spark.
-
 ## 1. Kiến trúc triển khai
 
 MindSchool được triển khai theo mô hình hybrid: phần Web/API/Dashboard chạy trên một VPS bằng Docker Compose, còn phần lưu trữ dữ liệu lớn và xử lý batch chạy trên Google Cloud. Cách triển khai này giúp web phản hồi nhanh trên máy chủ cố định, trong khi các job nặng như Spark, GCS, Workflow và Scheduler được tách sang GCP để dễ mở rộng và dễ giám sát.
