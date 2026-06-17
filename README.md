@@ -146,17 +146,6 @@ survey-snapshot-worker
   Đọc survey từ PostgreSQL và ghi snapshot lên GCS Bronze.
 ```
 
-Keyword:
-
-```text
-Docker Compose
-FastAPI
-React
-Streamlit
-PostgreSQL
-Worker
-```
-
 ## 6. Kiến trúc Chatbot và RAG
 
 Chatbot dùng RAG để trả lời dựa trên tài liệu đã được xử lý trước.
@@ -182,18 +171,6 @@ Qdrant       lưu vector embedding
 GCS          lưu tài liệu/chunk
 Backend RAG  điều phối truy xuất và trả lời
 Kafka        nhận chatlog để phân tích
-```
-
-Keyword:
-
-```text
-RAG
-Vector Search
-Embedding
-Qdrant
-Top-k Chunks
-LLM
-Chatlog
 ```
 
 ## 7. Kiến trúc Streaming Chatlog
@@ -229,19 +206,7 @@ Format             Parquet
 - dữ liệu được partition theo ngày/giờ
 - message lỗi đi vào DLQ
 - offset chỉ commit sau khi upload GCS thành công
-
-Keyword:
-
-```text
-Kafka
-Streaming
-Consumer
-Parquet
-Silver Layer
-DLQ
-At-least-once
-```
-
+  
 ## 8. Kiến trúc Survey Pipeline
 
 Survey dùng mô hình snapshot + batch.
@@ -278,18 +243,6 @@ Lý do dùng batch:
 - cần tổng hợp theo nhóm học sinh/sinh viên
 - Spark phù hợp cho dữ liệu lớn
 
-Keyword:
-
-```text
-Survey Snapshot
-PostgreSQL
-Bronze
-Silver
-Gold
-Spark Batch
-Dashboard Tables
-```
-
 ## 9. Batch Analytics trên Google Cloud
 
 Batch không chạy bằng cron local mà chạy trên Google Cloud.
@@ -321,17 +274,6 @@ survey_silver_to_gold
 chat_silver_to_gold
 ```
 
-Keyword:
-
-```text
-Cloud Scheduler
-Workflows
-Dataproc Serverless
-Spark Batch
-Nightly Job
-Gold Refresh
-```
-
 ## 10. Dashboard và Cache
 
 Dashboard dùng Streamlit và đọc dữ liệu đã xử lý ở Gold.
@@ -361,14 +303,6 @@ Mục tiêu cache:
 - tránh tính toán lại raw data
 - hiển thị dữ liệu Gold mới sau batch
 
-Keyword:
-
-```text
-Streamlit
-Gold Tables
-Dashboard Cache
-Analytics UI
-```
 
 ## 11. Luồng dữ liệu tổng quan
 
