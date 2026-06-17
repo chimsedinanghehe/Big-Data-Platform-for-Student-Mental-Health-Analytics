@@ -4,17 +4,6 @@
 
 MindSchool là nền tảng phân tích sức khỏe tinh thần cho học sinh và sinh viên. Hệ thống cho phép người dùng làm khảo sát, trò chuyện với chatbot hỗ trợ tâm lý, sau đó dữ liệu được xử lý để hiển thị trên dashboard phân tích.
 
-Keyword chính:
-
-```text
-Student Mental Health
-Survey Analytics
-Chatbot RAG
-Big Data Pipeline
-Dashboard
-VPS + Google Cloud
-```
-
 Mục tiêu của hệ thống:
 
 - thu thập dữ liệu khảo sát sức khỏe tinh thần
@@ -83,17 +72,6 @@ Tầng 4: Data Lake
 
 Tầng 5: Batch Analytics
   Cloud Scheduler gọi Workflow, Workflow chạy Spark batch trên Dataproc.
-```
-
-Keyword cần nhớ:
-
-```text
-Nginx
-Docker Compose
-Kafka Streaming
-GCS Data Lake
-Dataproc Spark
-Bronze / Silver / Gold
 ```
 
 ## 4. Public Gateway và bảo mật
